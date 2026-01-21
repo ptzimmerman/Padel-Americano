@@ -1,0 +1,5 @@
+{
+  "name": "Padel Americano Manager",
+  "description": "A sophisticated tournament organizer for doubles padel that generates balanced rotations where every player partners with everyone else exactly once.",
+  "requestFramePermissions": []
+}
