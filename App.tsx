@@ -142,7 +142,7 @@ const App: React.FC = () => {
   const PlayerName = ({ name, baseClass }: { name: string, baseClass: string }) => {
     const isPete = name.trim().toLowerCase() === 'pete';
     return (
-      <span className={`${baseClass} ${isPete ? 'scale-50 origin-left inline-block' : ''} truncate max-w-full`}>
+      <span className={`${baseClass} ${isPete ? 'scale-50 origin-left inline-block' : ''}`}>
         {name}
       </span>
     );
@@ -318,7 +318,7 @@ const App: React.FC = () => {
                       {match.isCompleted && <span className="text-emerald-500 flex items-center gap-1"><ShieldCheck size={12}/> Done</span>}
                     </div>
                     <div className="p-6 md:p-14 flex flex-col md:grid md:grid-cols-7 items-center gap-6 md:gap-8">
-                      <div className="w-full md:col-span-2 text-center md:text-right space-y-1 min-w-0">
+                      <div className="w-full md:col-span-2 text-center md:text-right space-y-1 pr-1">
                         <PlayerName name={getP(match.teamA[0])} baseClass="text-xl md:text-3xl font-[900] text-slate-900 tracking-tight italic block" />
                         <PlayerName name={getP(match.teamA[1])} baseClass="text-xl md:text-3xl font-[900] text-slate-900 tracking-tight italic block" />
                       </div>
@@ -327,7 +327,7 @@ const App: React.FC = () => {
                         <span className="text-slate-200 font-black italic text-sm md:text-xl shrink-0">VS</span>
                         <input type="number" value={match.scoreB ?? ''} onChange={(e) => updateScore(currentRoundIndex, match.id, 'B', e.target.value)} className="w-16 h-16 md:w-28 md:h-28 text-center text-3xl md:text-5xl font-black bg-slate-50 border-2 md:border-4 border-slate-100 rounded-2xl md:rounded-[2.5rem] focus:border-indigo-600 focus:bg-white transition-all outline-none" placeholder="0" />
                       </div>
-                      <div className="w-full md:col-span-2 text-center md:text-left space-y-1 min-w-0">
+                      <div className="w-full md:col-span-2 text-center md:text-left space-y-1 pl-1">
                         <PlayerName name={getP(match.teamB[0])} baseClass="text-xl md:text-3xl font-[900] text-slate-900 tracking-tight italic block" />
                         <PlayerName name={getP(match.teamB[1])} baseClass="text-xl md:text-3xl font-[900] text-slate-900 tracking-tight italic block" />
                       </div>
