@@ -400,13 +400,15 @@ const App: React.FC = () => {
                 <span className="text-[9px] md:text-[10px] font-black uppercase tracking-[0.2em] md:tracking-[0.4em] text-slate-400 block mb-1">Round</span>
                 <div className="text-4xl md:text-7xl font-black text-slate-900 flex items-center justify-center gap-2">
                   {currentRoundIndex + 1}<span className="text-slate-300 text-base md:text-2xl font-bold">/ {tournament.rounds.length}</span>
-                  <button 
-                    onClick={addRound} 
-                    className="ml-2 p-2 md:p-3 rounded-xl bg-indigo-100 hover:bg-indigo-200 text-indigo-600 transition-all"
-                    title="Add another round"
-                  >
-                    <Plus className="w-5 h-5 md:w-6 md:h-6" strokeWidth={3} />
-                  </button>
+                  {currentRoundIndex === tournament.rounds.length - 1 && (
+                    <button 
+                      onClick={addRound} 
+                      className="ml-2 p-2 md:p-3 rounded-xl bg-indigo-100 hover:bg-indigo-200 text-indigo-600 transition-all"
+                      title="Add another round"
+                    >
+                      <Plus className="w-5 h-5 md:w-6 md:h-6" strokeWidth={3} />
+                    </button>
+                  )}
                 </div>
                 {(() => {
                   const matches = tournament.rounds[currentRoundIndex]?.matches || [];
