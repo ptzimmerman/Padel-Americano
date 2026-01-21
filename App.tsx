@@ -489,52 +489,69 @@ const App: React.FC = () => {
               
               // Determine winners and losers
               const teamAWon = championshipMatch.scoreA > championshipMatch.scoreB;
-              const winners = teamAWon ? championshipMatch.teamA : championshipMatch.teamB;
-              const losers = teamAWon ? championshipMatch.teamB : championshipMatch.teamA;
+              const winningTeam = teamAWon ? championshipMatch.teamA : championshipMatch.teamB;
+              const runnerUpTeam = teamAWon ? championshipMatch.teamB : championshipMatch.teamA;
+              const winningScore = teamAWon ? championshipMatch.scoreA : championshipMatch.scoreB;
+              const losingScore = teamAWon ? championshipMatch.scoreB : championshipMatch.scoreA;
               
-              // Get player details and sort within teams by total points
+              // Get player details
               const getPlayerStats = (id: string) => leaderboard.find(e => e.playerId === id);
-              const winnersWithStats = winners.map(id => ({ id, stats: getPlayerStats(id) }))
-                .sort((a, b) => (b.stats?.totalPoints || 0) - (a.stats?.totalPoints || 0));
-              const losersWithStats = losers.map(id => ({ id, stats: getPlayerStats(id) }))
-                .sort((a, b) => (b.stats?.totalPoints || 0) - (a.stats?.totalPoints || 0));
+              const getPlayerName = (id: string) => tournament?.players.find(p => p.id === id)?.name || 'Unknown';
               
-              const finalRankings = [
-                { place: 1, ...winnersWithStats[0] },
-                { place: 2, ...winnersWithStats[1] },
-                { place: 3, ...losersWithStats[0] },
-                { place: 4, ...losersWithStats[1] },
-              ];
-              
-              const placeStyles = [
-                'bg-yellow-400 text-white', // 1st
-                'bg-slate-300 text-slate-700', // 2nd
-                'bg-orange-400 text-white', // 3rd
-                'bg-slate-200 text-slate-600', // 4th
-              ];
+              // Individual ranking among all 4 finalists by total points
+              const allFinalists = [...winningTeam, ...runnerUpTeam]
+                .map(id => ({ id, name: getPlayerName(id), stats: getPlayerStats(id) }))
+                .sort((a, b) => (b.stats?.totalPoints || 0) - (a.stats?.totalPoints || 0));
               
               const placeLabels = ['🥇', '🥈', '🥉', '4th'];
               
               return (
                 <div className="bg-gradient-to-r from-yellow-100 via-amber-50 to-yellow-100 rounded-3xl md:rounded-[3rem] p-6 md:p-8 border-2 border-yellow-300 shadow-lg">
                   <h3 className="text-xl md:text-2xl font-black text-slate-800 flex items-center gap-2 justify-center mb-6">
-                    <Trophy className="w-6 h-6 md:w-8 md:h-8 text-yellow-500" /> Final Standings
+                    <Trophy className="w-6 h-6 md:w-8 md:h-8 text-yellow-500" /> Championship Results
                   </h3>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-                    {finalRankings.map((entry, idx) => (
-                      <div key={entry.id} className={`${placeStyles[idx]} rounded-2xl md:rounded-3xl p-4 md:p-6 text-center shadow-md`}>
-                        <div className="text-2xl md:text-4xl mb-2">{placeLabels[idx]}</div>
-                        <div className="font-black text-lg md:text-xl italic truncate">
-                          {tournament?.players.find(p => p.id === entry.id)?.name || 'Unknown'}
-                        </div>
-                        <div className="text-xs md:text-sm opacity-75 font-bold mt-1">
-                          {entry.stats?.totalPoints || 0} pts
-                        </div>
+                  
+                  {/* Team Results */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                    {/* Champions */}
+                    <div className="bg-gradient-to-br from-yellow-400 to-amber-500 rounded-2xl p-5 text-white text-center shadow-lg">
+                      <div className="text-3xl mb-2">🏆</div>
+                      <div className="text-xs font-black uppercase tracking-widest opacity-80 mb-2">Champions</div>
+                      <div className="font-black text-xl md:text-2xl italic">
+                        {getPlayerName(winningTeam[0])} & {getPlayerName(winningTeam[1])}
                       </div>
-                    ))}
+                      <div className="text-2xl font-black mt-2">{winningScore}</div>
+                    </div>
+                    
+                    {/* Runner Up */}
+                    <div className="bg-gradient-to-br from-slate-300 to-slate-400 rounded-2xl p-5 text-slate-700 text-center shadow-lg">
+                      <div className="text-3xl mb-2">🥈</div>
+                      <div className="text-xs font-black uppercase tracking-widest opacity-70 mb-2">Runner Up</div>
+                      <div className="font-black text-xl md:text-2xl italic">
+                        {getPlayerName(runnerUpTeam[0])} & {getPlayerName(runnerUpTeam[1])}
+                      </div>
+                      <div className="text-2xl font-black mt-2">{losingScore}</div>
+                    </div>
                   </div>
-                  <div className="text-center mt-4 text-sm text-slate-600 font-medium">
-                    Championship: {teamAWon ? championshipMatch.scoreA : championshipMatch.scoreB} - {teamAWon ? championshipMatch.scoreB : championshipMatch.scoreA}
+                  
+                  {/* Individual Rankings */}
+                  <div className="border-t-2 border-yellow-300 pt-5">
+                    <div className="text-xs font-black uppercase tracking-widest text-slate-500 text-center mb-4">
+                      Individual Rankings (by tournament points)
+                    </div>
+                    <div className="grid grid-cols-4 gap-2 md:gap-3">
+                      {allFinalists.map((entry, idx) => (
+                        <div key={entry.id} className="bg-white/60 rounded-xl p-3 text-center">
+                          <div className="text-lg md:text-2xl">{placeLabels[idx]}</div>
+                          <div className="font-black text-sm md:text-base italic truncate mt-1">
+                            {entry.name}
+                          </div>
+                          <div className="text-xs text-slate-500 font-bold">
+                            {entry.stats?.totalPoints || 0} pts
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
               );
