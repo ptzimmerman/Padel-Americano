@@ -306,7 +306,10 @@ const App: React.FC = () => {
               <button disabled={currentRoundIndex === tournament.rounds.length - 1} onClick={() => setCurrentRoundIndex(i => i + 1)} className="p-3 md:p-6 rounded-xl md:rounded-[2rem] text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition-all disabled:opacity-0"><ChevronRight className="w-8 h-8 md:w-12 md:h-12" strokeWidth={3} /></button>
             </div>
             <div className="grid gap-4 md:gap-8">
-              {(tournament.rounds[currentRoundIndex]?.matches || []).map((match) => {
+              {(tournament.rounds[currentRoundIndex]?.matches || [])
+                .slice() // Don't mutate original
+                .sort((a, b) => a.courtIndex - b.courtIndex) // Always show courts in order
+                .map((match) => {
                 const getP = (id: string) => tournament.players.find(p => p.id === id)?.name || 'Unknown';
                 return (
                   <div key={match.id} className="bg-white rounded-3xl md:rounded-[4rem] shadow-sm border border-slate-200 overflow-hidden">
