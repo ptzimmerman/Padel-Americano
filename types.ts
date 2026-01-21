@@ -39,4 +39,5 @@ export interface LeaderboardEntry {
   wins: number;
   losses: number;
   ties: number;
+  pointDifferential: number; // Total points scored minus points conceded
 }

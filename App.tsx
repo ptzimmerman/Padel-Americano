@@ -25,7 +25,6 @@ const App: React.FC = () => {
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [currentRoundIndex, setCurrentRoundIndex] = useState(0);
   const [courtNames, setCourtNames] = useState<string[]>([]);
-  const [editingCourtIndex, setEditingCourtIndex] = useState<number | null>(null);
 
   // Calculate number of courts based on player count
   const numCourts = Math.floor(players.length / 4);
@@ -164,7 +163,7 @@ const App: React.FC = () => {
     if (!tournament) return [];
     const stats: Record<string, LeaderboardEntry> = {};
     tournament.players.forEach(p => stats[p.id] = {
-      playerId: p.id, playerName: p.name, totalPoints: 0, matchesPlayed: 0, avgPoints: 0, wins: 0, losses: 0, ties: 0
+      playerId: p.id, playerName: p.name, totalPoints: 0, matchesPlayed: 0, avgPoints: 0, wins: 0, losses: 0, ties: 0, pointDifferential: 0
     });
 
     tournament.rounds.forEach(r => r.matches.forEach(m => {
@@ -173,6 +172,7 @@ const App: React.FC = () => {
         pIds.forEach(id => {
           if (!stats[id]) return;
           stats[id].totalPoints += s;
+          stats[id].pointDifferential += (s - os); // Track point differential
           stats[id].matchesPlayed++;
           if (s > os) stats[id].wins++;
           else if (s < os) stats[id].losses++;
@@ -183,12 +183,35 @@ const App: React.FC = () => {
       processTeam(m.teamB, m.scoreB, m.scoreA);
     }));
 
+    // Sort: 1. Total Points, 2. Match Wins, 3. Point Differential
     return Object.values(stats)
       .map(s => ({ ...s, avgPoints: s.matchesPlayed ? Number((s.totalPoints / s.matchesPlayed).toFixed(1)) : 0 }))
-      .sort((a, b) => b.totalPoints - a.totalPoints || b.wins - a.wins || a.matchesPlayed - b.matchesPlayed);
+      .sort((a, b) => 
+        b.totalPoints - a.totalPoints || 
+        b.wins - a.wins || 
+        b.pointDifferential - a.pointDifferential
+      );
   }, [tournament]);
 
   const isPerfect = tournament && [8, 12, 16].includes(tournament.players.length);
+
+  // Keyboard navigation for rounds
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!tournament || activeTab !== 'rounds') return;
+      // Don't navigate if user is typing in an input
+      if (e.target instanceof HTMLInputElement) return;
+      
+      if (e.key === 'ArrowLeft' && currentRoundIndex > 0) {
+        setCurrentRoundIndex(i => i - 1);
+      } else if (e.key === 'ArrowRight' && currentRoundIndex < tournament.rounds.length - 1) {
+        setCurrentRoundIndex(i => i + 1);
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [tournament, activeTab, currentRoundIndex]);
 
   return (
     <div className="min-h-screen bg-[#fcfdfe] pb-24 md:pb-6 md:pl-24 font-inter antialiased">
@@ -270,24 +293,24 @@ const App: React.FC = () => {
                       {courtNames.map((name, idx) => (
                         <div key={idx} className="flex items-center gap-2">
                           <span className="text-slate-600 text-xs font-bold w-5">{idx + 1}</span>
-                          {editingCourtIndex === idx ? (
-                            <input
-                              type="text"
-                              value={name}
-                              onChange={(e) => updateCourtName(idx, e.target.value)}
-                              onBlur={() => setEditingCourtIndex(null)}
-                              onKeyDown={(e) => e.key === 'Enter' && setEditingCourtIndex(null)}
-                              autoFocus
-                              className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm font-bold focus:outline-none focus:border-indigo-500"
-                            />
-                          ) : (
-                            <button
-                              onClick={() => setEditingCourtIndex(idx)}
-                              className="flex-1 text-left bg-slate-800/50 hover:bg-slate-800 rounded-lg px-3 py-2 text-sm font-bold transition-all truncate"
-                            >
-                              {name}
-                            </button>
-                          )}
+                          <input
+                            type="text"
+                            value={name}
+                            onChange={(e) => updateCourtName(idx, e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                // Move to next input or blur
+                                if (idx < courtNames.length - 1) {
+                                  const nextInput = e.currentTarget.parentElement?.nextElementSibling?.querySelector('input');
+                                  nextInput?.focus();
+                                } else {
+                                  e.currentTarget.blur();
+                                }
+                              }
+                            }}
+                            placeholder={`Court ${idx + 1}`}
+                            className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm font-bold focus:outline-none focus:border-indigo-500 placeholder:text-slate-600"
+                          />
                         </div>
                       ))}
                     </div>
@@ -314,6 +337,20 @@ const App: React.FC = () => {
               <div className="text-center">
                 <span className="text-[9px] md:text-[10px] font-black uppercase tracking-[0.2em] md:tracking-[0.4em] text-slate-400 block mb-1">Round</span>
                 <div className="text-4xl md:text-7xl font-black text-slate-900">{currentRoundIndex + 1}<span className="text-slate-300 text-base md:text-2xl font-bold ml-1 md:ml-2">/ {tournament.rounds.length}</span></div>
+                {(() => {
+                  const matches = tournament.rounds[currentRoundIndex]?.matches || [];
+                  const completed = matches.filter(m => m.isCompleted).length;
+                  const total = matches.length;
+                  return (
+                    <div className="mt-2 text-[10px] md:text-xs font-bold text-slate-400">
+                      {completed === total ? (
+                        <span className="text-emerald-500">✓ All matches complete</span>
+                      ) : (
+                        <span>{completed}/{total} matches complete</span>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
               <button disabled={currentRoundIndex === tournament.rounds.length - 1} onClick={() => setCurrentRoundIndex(i => i + 1)} className="p-3 md:p-6 rounded-xl md:rounded-[2rem] text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition-all disabled:opacity-0"><ChevronRight className="w-8 h-8 md:w-12 md:h-12" strokeWidth={3} /></button>
             </div>
@@ -323,6 +360,10 @@ const App: React.FC = () => {
                 .sort((a, b) => a.courtIndex - b.courtIndex) // Always show courts in order
                 .map((match) => {
                 const getP = (id: string) => tournament.players.find(p => p.id === id)?.name || 'Unknown';
+                const teamAWon = match.isCompleted && match.scoreA !== null && match.scoreB !== null && match.scoreA > match.scoreB;
+                const teamBWon = match.isCompleted && match.scoreA !== null && match.scoreB !== null && match.scoreB > match.scoreA;
+                const winnerTextClass = "text-emerald-600";
+                const winnerInputClass = "!border-emerald-400 !bg-emerald-50 text-emerald-700";
                 return (
                   <div key={match.id} className="bg-white rounded-3xl md:rounded-[4rem] shadow-sm border border-slate-200 overflow-hidden">
                     <div className="bg-slate-50/50 px-6 md:px-12 py-3 md:py-5 border-b border-slate-100 flex justify-between items-center font-black text-[9px] md:text-[10px] text-slate-400 uppercase tracking-widest">
@@ -331,17 +372,17 @@ const App: React.FC = () => {
                     </div>
                     <div className="p-6 md:p-14 flex flex-col md:grid md:grid-cols-7 items-center gap-6 md:gap-8">
                       <div className="w-full md:col-span-2 text-center md:text-right space-y-1 pr-1">
-                        <PlayerName name={getP(match.teamA[0])} baseClass="text-xl md:text-3xl font-[900] text-slate-900 tracking-tight italic block" />
-                        <PlayerName name={getP(match.teamA[1])} baseClass="text-xl md:text-3xl font-[900] text-slate-900 tracking-tight italic block" />
+                        <PlayerName name={getP(match.teamA[0])} baseClass={`text-xl md:text-3xl font-[900] tracking-tight italic block ${teamAWon ? winnerTextClass : 'text-slate-900'}`} />
+                        <PlayerName name={getP(match.teamA[1])} baseClass={`text-xl md:text-3xl font-[900] tracking-tight italic block ${teamAWon ? winnerTextClass : 'text-slate-900'}`} />
                       </div>
                       <div className="w-full md:col-span-3 flex items-center justify-center gap-4 md:gap-6">
-                        <input type="number" value={match.scoreA ?? ''} onChange={(e) => updateScore(currentRoundIndex, match.id, 'A', e.target.value)} className="w-16 h-16 md:w-28 md:h-28 text-center text-3xl md:text-5xl font-black bg-slate-50 border-2 md:border-4 border-slate-100 rounded-2xl md:rounded-[2.5rem] focus:border-indigo-600 focus:bg-white transition-all outline-none" placeholder="0" />
+                        <input type="number" value={match.scoreA ?? ''} onChange={(e) => updateScore(currentRoundIndex, match.id, 'A', e.target.value)} className={`w-16 h-16 md:w-28 md:h-28 text-center text-3xl md:text-5xl font-black bg-slate-50 border-2 md:border-4 border-slate-100 rounded-2xl md:rounded-[2.5rem] focus:border-indigo-600 focus:bg-white transition-all outline-none ${teamAWon ? winnerInputClass : ''}`} placeholder="0" />
                         <span className="text-slate-200 font-black italic text-sm md:text-xl shrink-0">VS</span>
-                        <input type="number" value={match.scoreB ?? ''} onChange={(e) => updateScore(currentRoundIndex, match.id, 'B', e.target.value)} className="w-16 h-16 md:w-28 md:h-28 text-center text-3xl md:text-5xl font-black bg-slate-50 border-2 md:border-4 border-slate-100 rounded-2xl md:rounded-[2.5rem] focus:border-indigo-600 focus:bg-white transition-all outline-none" placeholder="0" />
+                        <input type="number" value={match.scoreB ?? ''} onChange={(e) => updateScore(currentRoundIndex, match.id, 'B', e.target.value)} className={`w-16 h-16 md:w-28 md:h-28 text-center text-3xl md:text-5xl font-black bg-slate-50 border-2 md:border-4 border-slate-100 rounded-2xl md:rounded-[2.5rem] focus:border-indigo-600 focus:bg-white transition-all outline-none ${teamBWon ? winnerInputClass : ''}`} placeholder="0" />
                       </div>
                       <div className="w-full md:col-span-2 text-center md:text-left space-y-1 pl-1">
-                        <PlayerName name={getP(match.teamB[0])} baseClass="text-xl md:text-3xl font-[900] text-slate-900 tracking-tight italic block" />
-                        <PlayerName name={getP(match.teamB[1])} baseClass="text-xl md:text-3xl font-[900] text-slate-900 tracking-tight italic block" />
+                        <PlayerName name={getP(match.teamB[0])} baseClass={`text-xl md:text-3xl font-[900] tracking-tight italic block ${teamBWon ? winnerTextClass : 'text-slate-900'}`} />
+                        <PlayerName name={getP(match.teamB[1])} baseClass={`text-xl md:text-3xl font-[900] tracking-tight italic block ${teamBWon ? winnerTextClass : 'text-slate-900'}`} />
                       </div>
                     </div>
                   </div>
