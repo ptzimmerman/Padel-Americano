@@ -58,10 +58,11 @@ const WHIST_SEEDS: Record<number, number[][]> = {
  * Optimize court assignments to maximize variety for each player.
  * Players should play on different courts as much as possible.
  * 
- * Strategy:
- * 1. Calculate "staleness" - how recently each player was on each court
- * 2. Find permutation that minimizes total staleness (avoids recent courts)
- * 3. On ties, prefer permutations that maximize court changes from last round
+ * The Whist schedule is perfectly balanced, so statistical approaches
+ * often result in ties. We use a simple, deterministic approach:
+ * 
+ * 1. Try to minimize players staying on the same court as last round
+ * 2. When tied (common with balanced schedules), use round parity to alternate
  */
 const optimizeCourtAssignments = (
   matches: Match[],
@@ -70,53 +71,27 @@ const optimizeCourtAssignments = (
   if (matches.length <= 1) return matches;
 
   const getPlayersInMatch = (m: Match) => [...m.teamA, ...m.teamB];
+  const numCourts = matches.length;
   
   /**
-   * Calculate staleness for a player on a specific court.
-   * Higher = worse (player was on this court more recently)
-   * 
-   * Uses weighted recency: most recent round counts most, older rounds decay
+   * Count players who would stay on the same court as their last round
+   * Lower is better (we want movement)
    */
-  const getCourtStaleness = (playerId: string, courtIdx: number): number => {
-    const history = playerCourtHistory.get(playerId) || [];
-    if (history.length === 0) return 0;
-    
-    let staleness = 0;
-    for (let i = 0; i < history.length; i++) {
-      if (history[i] === courtIdx) {
-        // More recent rounds (higher i) = higher weight
-        // Last round: weight = history.length, first round: weight = 1
-        const recencyWeight = i + 1;
-        staleness += recencyWeight;
+  const countPlayersStaying = (perm: number[]): number => {
+    let staying = 0;
+    for (let matchIdx = 0; matchIdx < matches.length; matchIdx++) {
+      const courtIdx = perm[matchIdx];
+      for (const playerId of getPlayersInMatch(matches[matchIdx])) {
+        const history = playerCourtHistory.get(playerId) || [];
+        if (history.length > 0 && history[history.length - 1] === courtIdx) {
+          staying++;
+        }
       }
     }
-    return staleness;
+    return staying;
   };
 
-  /**
-   * Count how many players would change courts with this assignment
-   * (compared to their most recent court). Higher = better for variety.
-   */
-  const countCourtChanges = (match: Match, courtIdx: number): number => {
-    return getPlayersInMatch(match).reduce((changes, playerId) => {
-      const history = playerCourtHistory.get(playerId) || [];
-      if (history.length === 0) return changes;
-      const lastCourt = history[history.length - 1];
-      return changes + (lastCourt !== courtIdx ? 1 : 0);
-    }, 0);
-  };
-
-  const getMatchCourtScore = (match: Match, courtIdx: number): number => {
-    return getPlayersInMatch(match).reduce(
-      (sum, playerId) => sum + getCourtStaleness(playerId, courtIdx),
-      0
-    );
-  };
-
-  const numCourts = matches.length;
-  const courtIndices = Array.from({ length: numCourts }, (_, i) => i);
-  
-  // Generate all permutations
+  // Generate all permutations of court indices
   const permute = (arr: number[]): number[][] => {
     if (arr.length <= 1) return [arr];
     const result: number[][] = [];
@@ -129,29 +104,39 @@ const optimizeCourtAssignments = (
     return result;
   };
 
+  const courtIndices = Array.from({ length: numCourts }, (_, i) => i);
   const allPermutations = permute(courtIndices);
-  let bestPermutation = courtIndices;
-  let bestScore = Infinity;
-  let bestChanges = -1; // Tiebreaker: prefer more court changes
-
+  
+  // Find permutation(s) with minimum players staying
+  let minStaying = Infinity;
+  const bestPermutations: number[][] = [];
+  
   for (const perm of allPermutations) {
-    const score = matches.reduce(
-      (sum, match, idx) => sum + getMatchCourtScore(match, perm[idx]),
-      0
-    );
-    
-    // Count how many players would change courts with this permutation
-    const changes = matches.reduce(
-      (sum, match, idx) => sum + countCourtChanges(match, perm[idx]),
-      0
-    );
-    
-    // Primary: minimize staleness. Secondary: maximize court changes.
-    if (score < bestScore || (score === bestScore && changes > bestChanges)) {
-      bestScore = score;
-      bestChanges = changes;
-      bestPermutation = perm;
+    const staying = countPlayersStaying(perm);
+    if (staying < minStaying) {
+      minStaying = staying;
+      bestPermutations.length = 0;
+      bestPermutations.push(perm);
+    } else if (staying === minStaying) {
+      bestPermutations.push(perm);
     }
+  }
+
+  // Tiebreaker: Use round number (history length) to alternate deterministically
+  // This ensures consistent rotation even when statistics are balanced
+  const roundNumber = playerCourtHistory.values().next().value?.length || 0;
+  
+  // For 2 courts: alternate between [0,1] and [1,0] based on round parity
+  // For more courts: cycle through permutations
+  let bestPermutation: number[];
+  
+  if (bestPermutations.length === 1) {
+    bestPermutation = bestPermutations[0];
+  } else {
+    // Multiple tied permutations - use round number to pick deterministically
+    // This creates a predictable alternation pattern
+    const permIndex = roundNumber % bestPermutations.length;
+    bestPermutation = bestPermutations[permIndex];
   }
 
   // Apply the best permutation
