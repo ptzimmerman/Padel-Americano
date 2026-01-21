@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Player, Tournament, Round, LeaderboardEntry, Match } from './types.ts';
-import { generateAmericanoSchedule } from './utils/scheduler.ts';
+import { generateAmericanoSchedule, generateAdditionalRound, generateChampionshipRound } from './utils/scheduler.ts';
 import { 
   Users, 
   Trophy, 
@@ -137,6 +137,38 @@ const App: React.FC = () => {
     }
   };
 
+  const addRound = () => {
+    if (!tournament) return;
+    const newRoundIndex = tournament.rounds.length;
+    const newRound = generateAdditionalRound(
+      tournament.players,
+      tournament.rounds,
+      newRoundIndex
+    );
+    setTournament({
+      ...tournament,
+      rounds: [...tournament.rounds, newRound]
+    });
+    setCurrentRoundIndex(newRoundIndex);
+  };
+
+  const addChampionshipRound = () => {
+    if (!tournament || leaderboard.length < 4) return;
+    const newRoundIndex = tournament.rounds.length;
+    const newRound = generateChampionshipRound(
+      tournament.players,
+      leaderboard,
+      tournament.rounds,
+      newRoundIndex
+    );
+    setTournament({
+      ...tournament,
+      rounds: [...tournament.rounds, newRound]
+    });
+    setCurrentRoundIndex(newRoundIndex);
+    setActiveTab('rounds');
+  };
+
   const updateScore = (roundIdx: number, matchId: string, team: 'A' | 'B', score: string) => {
     if (!tournament) return;
     const val = score === '' ? null : Math.max(0, parseInt(score) || 0);
@@ -260,10 +292,23 @@ const App: React.FC = () => {
         {activeTab === 'setup' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
             <div className="lg:col-span-2 bg-white rounded-3xl md:rounded-[3rem] shadow-sm border border-slate-200 p-6 md:p-10 relative overflow-hidden">
+              {/* Tournament in progress overlay */}
+              {tournament && (
+                <div className="absolute inset-0 bg-white/90 backdrop-blur-sm z-10 flex flex-col items-center justify-center p-6">
+                  <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 md:p-8 text-center max-w-md">
+                    <ShieldCheck className="w-12 h-12 text-amber-500 mx-auto mb-4" />
+                    <h3 className="text-xl font-black text-slate-800 mb-2">Tournament In Progress</h3>
+                    <p className="text-slate-600 text-sm mb-4">Players are locked while a tournament is active. End the current tournament to modify the roster.</p>
+                    <button onClick={resetTournament} className="bg-rose-500 hover:bg-rose-600 text-white px-6 py-3 rounded-xl font-bold transition-all">
+                      End Tournament
+                    </button>
+                  </div>
+                </div>
+              )}
               <h2 className="text-xl md:text-2xl font-black text-slate-800 mb-6 md:mb-8 flex items-center gap-3"><Users className="w-5 h-5 md:w-6 md:h-6 text-indigo-600" /> Players</h2>
               <div className="flex gap-2 md:gap-4 mb-8 md:mb-10">
-                <input type="text" value={newPlayerName} onChange={(e) => setNewPlayerName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addPlayer()} placeholder="Player name..." className="flex-1 bg-slate-50 border-2 border-slate-100 rounded-2xl md:rounded-3xl px-4 md:px-8 py-4 md:py-5 focus:outline-none focus:border-indigo-600 font-bold text-base md:text-lg" />
-                <button onClick={addPlayer} className="bg-indigo-600 text-white px-6 md:px-8 rounded-2xl md:rounded-3xl shadow-lg transition-all active:scale-95 flex items-center justify-center"><Plus className="w-6 h-6 md:w-8 md:h-8" strokeWidth={3} /></button>
+                <input type="text" value={newPlayerName} onChange={(e) => setNewPlayerName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addPlayer()} placeholder="Player name..." disabled={!!tournament} className="flex-1 bg-slate-50 border-2 border-slate-100 rounded-2xl md:rounded-3xl px-4 md:px-8 py-4 md:py-5 focus:outline-none focus:border-indigo-600 font-bold text-base md:text-lg disabled:opacity-50" />
+                <button onClick={addPlayer} disabled={!!tournament} className="bg-indigo-600 text-white px-6 md:px-8 rounded-2xl md:rounded-3xl shadow-lg transition-all active:scale-95 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"><Plus className="w-6 h-6 md:w-8 md:h-8" strokeWidth={3} /></button>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 max-h-[400px] md:max-h-[500px] overflow-y-auto pr-1">
                 {players.length === 0 ? (
@@ -274,7 +319,9 @@ const App: React.FC = () => {
                       <span className="text-slate-300 mr-2 md:mr-3 font-black text-lg md:text-xl shrink-0">{idx+1}</span>
                       <PlayerName name={p.name} baseClass="font-black text-slate-800 text-lg md:text-xl" />
                     </span>
-                    <button onClick={() => removePlayer(p.id)} className="text-slate-200 group-hover:text-rose-500 shrink-0"><Trash2 className="w-5 h-5 md:w-6 md:h-6" /></button>
+                    {!tournament && (
+                      <button onClick={() => removePlayer(p.id)} className="text-slate-200 group-hover:text-rose-500 shrink-0"><Trash2 className="w-5 h-5 md:w-6 md:h-6" /></button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -286,7 +333,7 @@ const App: React.FC = () => {
                 <div className="flex justify-between items-center pb-6 md:pb-8 border-b border-slate-800"><span className="text-slate-400 font-bold">Rounds</span><span className="text-3xl md:text-4xl font-black">{players.length > 0 ? (players.length % 2 === 0 ? players.length - 1 : players.length) : 0}</span></div>
                 
                 {/* Court Names Configuration */}
-                {numCourts > 0 && (
+                {numCourts > 0 && !tournament && (
                   <div className="pt-2">
                     <h3 className="text-slate-500 font-black uppercase text-[9px] md:text-[10px] tracking-widest mb-4">Court Names</h3>
                     <div className="space-y-2">
@@ -316,11 +363,26 @@ const App: React.FC = () => {
                     </div>
                   </div>
                 )}
+                {/* Show court names read-only during tournament */}
+                {tournament?.courtNames && tournament.courtNames.length > 0 && (
+                  <div className="pt-2">
+                    <h3 className="text-slate-500 font-black uppercase text-[9px] md:text-[10px] tracking-widest mb-4">Courts</h3>
+                    <div className="space-y-1 text-sm text-slate-400">
+                      {tournament.courtNames.map((name, idx) => (
+                        <div key={idx}>{name}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="space-y-4">
-                <button onClick={startTournament} disabled={players.length < 4} className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-800 text-white py-5 md:py-6 rounded-2xl md:rounded-[2rem] font-black text-lg md:text-xl flex items-center justify-center gap-3 transition-all active:scale-95"><Play className="w-5 h-5 md:w-6 md:h-6" fill="currentColor" /> GENERATE</button>
-                {tournament && <button onClick={resetTournament} className="w-full text-slate-500 font-bold text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 py-2"><Trash className="w-3 h-3" /> End Session</button>}
-                {(players.length > 0 || tournament) && (
+                {!tournament ? (
+                  <button onClick={startTournament} disabled={players.length < 4} className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-800 text-white py-5 md:py-6 rounded-2xl md:rounded-[2rem] font-black text-lg md:text-xl flex items-center justify-center gap-3 transition-all active:scale-95"><Play className="w-5 h-5 md:w-6 md:h-6" fill="currentColor" /> GENERATE</button>
+                ) : (
+                  <button onClick={() => setActiveTab('rounds')} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-5 md:py-6 rounded-2xl md:rounded-[2rem] font-black text-lg md:text-xl flex items-center justify-center gap-3 transition-all active:scale-95"><Layout className="w-5 h-5 md:w-6 md:h-6" /> GO TO MATCHES</button>
+                )}
+                {tournament && <button onClick={resetTournament} className="w-full text-slate-500 font-bold text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 py-2"><Trash className="w-3 h-3" /> End Tournament</button>}
+                {(players.length > 0 && !tournament) && (
                   <button onClick={clearAllData} className="w-full text-rose-400 hover:text-rose-300 font-bold text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 py-2 transition-colors">
                     <Trash2 className="w-3 h-3" /> Clear All Data
                   </button>
@@ -336,7 +398,16 @@ const App: React.FC = () => {
               <button disabled={currentRoundIndex === 0} onClick={() => setCurrentRoundIndex(i => i - 1)} className="p-3 md:p-6 rounded-xl md:rounded-[2rem] text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition-all disabled:opacity-0"><ChevronLeft className="w-8 h-8 md:w-12 md:h-12" strokeWidth={3} /></button>
               <div className="text-center">
                 <span className="text-[9px] md:text-[10px] font-black uppercase tracking-[0.2em] md:tracking-[0.4em] text-slate-400 block mb-1">Round</span>
-                <div className="text-4xl md:text-7xl font-black text-slate-900">{currentRoundIndex + 1}<span className="text-slate-300 text-base md:text-2xl font-bold ml-1 md:ml-2">/ {tournament.rounds.length}</span></div>
+                <div className="text-4xl md:text-7xl font-black text-slate-900 flex items-center justify-center gap-2">
+                  {currentRoundIndex + 1}<span className="text-slate-300 text-base md:text-2xl font-bold">/ {tournament.rounds.length}</span>
+                  <button 
+                    onClick={addRound} 
+                    className="ml-2 p-2 md:p-3 rounded-xl bg-indigo-100 hover:bg-indigo-200 text-indigo-600 transition-all"
+                    title="Add another round"
+                  >
+                    <Plus className="w-5 h-5 md:w-6 md:h-6" strokeWidth={3} />
+                  </button>
+                </div>
                 {(() => {
                   const matches = tournament.rounds[currentRoundIndex]?.matches || [];
                   const completed = matches.filter(m => m.isCompleted).length;
@@ -405,11 +476,31 @@ const App: React.FC = () => {
         )}
 
         {activeTab === 'leaderboard' && (
-          <div className="animate-in fade-in slide-in-from-bottom-4">
+          <div className="animate-in fade-in slide-in-from-bottom-4 space-y-6">
+            {/* Championship Round Button */}
+            {leaderboard.length >= 4 && (
+              <div className="bg-gradient-to-r from-yellow-50 to-amber-50 rounded-3xl md:rounded-[3rem] p-6 md:p-8 border border-yellow-200 flex flex-col md:flex-row items-center justify-between gap-4">
+                <div className="text-center md:text-left">
+                  <h3 className="text-lg md:text-xl font-black text-slate-800 flex items-center gap-2 justify-center md:justify-start">
+                    <Trophy className="w-5 h-5 md:w-6 md:h-6 text-yellow-500" /> Championship Round
+                  </h3>
+                  <p className="text-slate-600 text-sm mt-1">
+                    1st + 3rd place vs 2nd + 4th place
+                  </p>
+                </div>
+                <button 
+                  onClick={addChampionshipRound}
+                  className="bg-yellow-500 hover:bg-yellow-600 text-white px-6 py-3 rounded-2xl font-black transition-all active:scale-95 flex items-center gap-2"
+                >
+                  <Zap className="w-5 h-5" /> Create Finals
+                </button>
+              </div>
+            )}
+            
             <div className="bg-white rounded-3xl md:rounded-[4rem] shadow-sm border border-slate-200 overflow-hidden">
               <div className="px-6 md:px-12 py-6 md:py-8 border-b border-slate-100 flex items-center justify-between">
                 <h2 className="text-xl md:text-2xl font-black text-slate-800 flex items-center gap-2 md:gap-3"><Award className="w-6 h-6 md:w-7 md:h-7 text-yellow-500" /> Standings</h2>
-                <span className="hidden md:inline text-slate-400 text-xs font-black uppercase tracking-widest italic text-right">Sorted by Pts</span>
+                <span className="hidden md:inline text-slate-400 text-xs font-black uppercase tracking-widest italic text-right">Sorted by Pts → Wins → Diff</span>
               </div>
               <div className="overflow-x-auto overflow-y-hidden no-scrollbar">
                 <table className="w-full text-left border-collapse min-w-[600px]">
