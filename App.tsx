@@ -24,6 +24,27 @@ const App: React.FC = () => {
   const [newPlayerName, setNewPlayerName] = useState('');
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [currentRoundIndex, setCurrentRoundIndex] = useState(0);
+  const [courtNames, setCourtNames] = useState<string[]>([]);
+  const [editingCourtIndex, setEditingCourtIndex] = useState<number | null>(null);
+
+  // Calculate number of courts based on player count
+  const numCourts = Math.floor(players.length / 4);
+
+  // Initialize court names when player count changes
+  useEffect(() => {
+    setCourtNames(prev => {
+      if (numCourts === 0) return [];
+      if (prev.length === numCourts) return prev;
+      
+      const newNames = [...prev];
+      // Add default names for new courts
+      while (newNames.length < numCourts) {
+        newNames.push(`Court ${newNames.length + 1}`);
+      }
+      // Remove extra courts
+      return newNames.slice(0, numCourts);
+    });
+  }, [numCourts]);
 
   useEffect(() => {
     const savedPlayers = localStorage.getItem('padel_players');
@@ -64,9 +85,26 @@ const App: React.FC = () => {
       players: [...players],
       rounds,
       isStarted: true,
+      courtNames: [...courtNames],
     });
     setCurrentRoundIndex(0);
     setActiveTab('rounds');
+  };
+
+  const updateCourtName = (index: number, name: string) => {
+    setCourtNames(prev => {
+      const updated = [...prev];
+      updated[index] = name;
+      return updated;
+    });
+  };
+
+  // Get court name from tournament or state
+  const getCourtName = (courtIndex: number): string => {
+    if (tournament?.courtNames?.[courtIndex]) {
+      return tournament.courtNames[courtIndex];
+    }
+    return `Court ${courtIndex + 1}`;
   };
 
   const resetTournament = () => {
@@ -200,6 +238,38 @@ const App: React.FC = () => {
                 <h3 className="text-slate-500 font-black uppercase text-[9px] md:text-[10px] tracking-widest">Tournament Info</h3>
                 <div className="flex justify-between items-center"><span className="text-slate-400 font-bold">Athletes</span><span className="text-3xl md:text-4xl font-black">{players.length}</span></div>
                 <div className="flex justify-between items-center pb-6 md:pb-8 border-b border-slate-800"><span className="text-slate-400 font-bold">Rounds</span><span className="text-3xl md:text-4xl font-black">{players.length > 0 ? (players.length % 2 === 0 ? players.length - 1 : players.length) : 0}</span></div>
+                
+                {/* Court Names Configuration */}
+                {numCourts > 0 && (
+                  <div className="pt-2">
+                    <h3 className="text-slate-500 font-black uppercase text-[9px] md:text-[10px] tracking-widest mb-4">Court Names</h3>
+                    <div className="space-y-2">
+                      {courtNames.map((name, idx) => (
+                        <div key={idx} className="flex items-center gap-2">
+                          <span className="text-slate-600 text-xs font-bold w-5">{idx + 1}</span>
+                          {editingCourtIndex === idx ? (
+                            <input
+                              type="text"
+                              value={name}
+                              onChange={(e) => updateCourtName(idx, e.target.value)}
+                              onBlur={() => setEditingCourtIndex(null)}
+                              onKeyDown={(e) => e.key === 'Enter' && setEditingCourtIndex(null)}
+                              autoFocus
+                              className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm font-bold focus:outline-none focus:border-indigo-500"
+                            />
+                          ) : (
+                            <button
+                              onClick={() => setEditingCourtIndex(idx)}
+                              className="flex-1 text-left bg-slate-800/50 hover:bg-slate-800 rounded-lg px-3 py-2 text-sm font-bold transition-all truncate"
+                            >
+                              {name}
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="space-y-4">
                 <button onClick={startTournament} disabled={players.length < 4} className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-800 text-white py-5 md:py-6 rounded-2xl md:rounded-[2rem] font-black text-lg md:text-xl flex items-center justify-center gap-3 transition-all active:scale-95"><Play className="w-5 h-5 md:w-6 md:h-6" fill="currentColor" /> GENERATE</button>
@@ -225,7 +295,7 @@ const App: React.FC = () => {
                 return (
                   <div key={match.id} className="bg-white rounded-3xl md:rounded-[4rem] shadow-sm border border-slate-200 overflow-hidden">
                     <div className="bg-slate-50/50 px-6 md:px-12 py-3 md:py-5 border-b border-slate-100 flex justify-between items-center font-black text-[9px] md:text-[10px] text-slate-400 uppercase tracking-widest">
-                      <span>Court {match.courtIndex + 1}</span>
+                      <span>{getCourtName(match.courtIndex)}</span>
                       {match.isCompleted && <span className="text-emerald-500 flex items-center gap-1"><ShieldCheck size={12}/> Done</span>}
                     </div>
                     <div className="p-6 md:p-14 flex flex-col md:grid md:grid-cols-7 items-center gap-6 md:gap-8">

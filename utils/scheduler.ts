@@ -4,9 +4,15 @@ import { Player, Match, Round } from '../types.ts';
  * Mathematically Perfect Whist Tournament Logic
  * 1. Partner with every other player exactly once.
  * 2. Oppose every other player exactly twice (for N=8, 12, 16).
+ * 
+ * Enhanced with Court Rotation:
+ * - Track which courts each player has been on
+ * - Optimize court assignments to maximize variety
  */
 
 // Hardcoded verified schedule for 8 players from user image
+// Format: { t1: [court1_teamA_p1, court1_teamA_p2, court1_teamB_p1, court1_teamB_p2], 
+//           t2: [court2_teamA_p1, court2_teamA_p2, court2_teamB_p1, court2_teamB_p2] }
 const SCHEDULE_8 = [
   { t1: [0, 1, 2, 5], t2: [3, 6, 4, 7] },
   { t1: [0, 2, 3, 7], t2: [1, 5, 4, 6] },
@@ -48,15 +54,106 @@ const WHIST_SEEDS: Record<number, number[][]> = {
   ]
 };
 
+/**
+ * Optimize court assignments to maximize variety for each player.
+ * Players should play on different courts as much as possible.
+ */
+const optimizeCourtAssignments = (
+  matches: Match[],
+  playerCourtHistory: Map<string, number[]>
+): Match[] => {
+  if (matches.length <= 1) return matches;
+
+  // Get all player IDs in this round
+  const getPlayersInMatch = (m: Match) => [...m.teamA, ...m.teamB];
+  
+  // Calculate "staleness" score for a player on a court
+  // Higher score = player has been on this court more recently
+  const getCourtStaleness = (playerId: string, courtIdx: number): number => {
+    const history = playerCourtHistory.get(playerId) || [];
+    const lastIndex = history.lastIndexOf(courtIdx);
+    if (lastIndex === -1) return 0; // Never played on this court - ideal!
+    return history.length - lastIndex; // More recent = higher staleness
+  };
+
+  // Calculate total staleness for all players in a match on a given court
+  const getMatchCourtScore = (match: Match, courtIdx: number): number => {
+    return getPlayersInMatch(match).reduce(
+      (sum, playerId) => sum + getCourtStaleness(playerId, courtIdx),
+      0
+    );
+  };
+
+  // Try all permutations for small numbers of courts, pick the one with lowest total staleness
+  const numCourts = matches.length;
+  const courtIndices = Array.from({ length: numCourts }, (_, i) => i);
+  
+  // Generate all permutations of court indices
+  const permute = (arr: number[]): number[][] => {
+    if (arr.length <= 1) return [arr];
+    const result: number[][] = [];
+    for (let i = 0; i < arr.length; i++) {
+      const rest = [...arr.slice(0, i), ...arr.slice(i + 1)];
+      for (const perm of permute(rest)) {
+        result.push([arr[i], ...perm]);
+      }
+    }
+    return result;
+  };
+
+  const allPermutations = permute(courtIndices);
+  let bestPermutation = courtIndices;
+  let bestScore = Infinity;
+
+  for (const perm of allPermutations) {
+    const score = matches.reduce(
+      (sum, match, idx) => sum + getMatchCourtScore(match, perm[idx]),
+      0
+    );
+    if (score < bestScore) {
+      bestScore = score;
+      bestPermutation = perm;
+    }
+  }
+
+  // Apply the best permutation
+  return matches.map((match, idx) => ({
+    ...match,
+    courtIndex: bestPermutation[idx],
+    id: match.id.replace(/c\d+$/, `c${bestPermutation[idx]}`)
+  }));
+};
+
+/**
+ * Update player court history after optimizing a round
+ */
+const updateCourtHistory = (
+  matches: Match[],
+  history: Map<string, number[]>
+): void => {
+  for (const match of matches) {
+    for (const playerId of [...match.teamA, ...match.teamB]) {
+      const playerHistory = history.get(playerId) || [];
+      playerHistory.push(match.courtIndex);
+      history.set(playerId, playerHistory);
+    }
+  }
+};
+
 export const generateAmericanoSchedule = (players: Player[]): Round[] => {
   const numPlayers = players.length;
   if (numPlayers < 4) return [];
 
+  // Track player court history for rotation optimization
+  const playerCourtHistory = new Map<string, number[]>();
+
   // 1. Specialized Whist Schedules for Perfect Balance
   if (numPlayers === 8) {
-    return SCHEDULE_8.map((rData, rIdx) => ({
-      index: rIdx,
-      matches: [
+    const rounds: Round[] = [];
+    
+    for (let rIdx = 0; rIdx < SCHEDULE_8.length; rIdx++) {
+      const rData = SCHEDULE_8[rIdx];
+      let matches: Match[] = [
         {
           id: `r${rIdx}-c0`,
           roundIndex: rIdx,
@@ -73,24 +170,40 @@ export const generateAmericanoSchedule = (players: Player[]): Round[] => {
           teamB: [players[rData.t2[2]].id, players[rData.t2[3]].id],
           scoreA: null, scoreB: null, isCompleted: false
         }
-      ],
-      byes: []
-    }));
+      ];
+      
+      // Optimize court assignments based on history
+      matches = optimizeCourtAssignments(matches, playerCourtHistory);
+      updateCourtHistory(matches, playerCourtHistory);
+      
+      rounds.push({ index: rIdx, matches, byes: [] });
+    }
+    
+    return rounds;
   }
 
   if (numPlayers === 16) {
-    return SCHEDULE_16.map((roundMatches, rIdx) => ({
-      index: rIdx,
-      matches: roundMatches.map((m, cIdx) => ({
+    const rounds: Round[] = [];
+    
+    for (let rIdx = 0; rIdx < SCHEDULE_16.length; rIdx++) {
+      const roundMatches = SCHEDULE_16[rIdx];
+      let matches: Match[] = roundMatches.map((m, cIdx) => ({
         id: `r${rIdx}-c${cIdx}`,
         roundIndex: rIdx,
         courtIndex: cIdx,
         teamA: [players[m[0]].id, players[m[1]].id],
         teamB: [players[m[2]].id, players[m[3]].id],
         scoreA: null, scoreB: null, isCompleted: false
-      })),
-      byes: []
-    }));
+      }));
+      
+      // Optimize court assignments based on history
+      matches = optimizeCourtAssignments(matches, playerCourtHistory);
+      updateCourtHistory(matches, playerCourtHistory);
+      
+      rounds.push({ index: rIdx, matches, byes: [] });
+    }
+    
+    return rounds;
   }
 
   if (WHIST_SEEDS[numPlayers]) {
@@ -99,7 +212,7 @@ export const generateAmericanoSchedule = (players: Player[]): Round[] => {
     const rounds: Round[] = [];
 
     for (let r = 0; r < mod; r++) {
-      const roundMatches: Match[] = seed.map((m, mIdx) => {
+      let roundMatches: Match[] = seed.map((m, mIdx) => {
         const getPlayerId = (idx: number) => {
           if (idx === numPlayers - 1) return players[numPlayers - 1].id;
           return players[(idx + r) % mod].id;
@@ -113,6 +226,11 @@ export const generateAmericanoSchedule = (players: Player[]): Round[] => {
           scoreA: null, scoreB: null, isCompleted: false,
         };
       });
+      
+      // Optimize court assignments based on history
+      roundMatches = optimizeCourtAssignments(roundMatches, playerCourtHistory);
+      updateCourtHistory(roundMatches, playerCourtHistory);
+      
       rounds.push({ index: r, matches: roundMatches, byes: [] });
     }
     return rounds;
@@ -148,7 +266,7 @@ export const generateAmericanoSchedule = (players: Player[]): Round[] => {
     }
     
     // Distribute the valid pairs into matches
-    const matches: Match[] = [];
+    let matches: Match[] = [];
     const numMatchesPossible = Math.floor(validPairs.length / 2);
     
     for (let m = 0; m < numMatchesPossible; m++) {
@@ -161,6 +279,10 @@ export const generateAmericanoSchedule = (players: Player[]): Round[] => {
         scoreA: null, scoreB: null, isCompleted: false
       });
     }
+    
+    // Optimize court assignments based on history
+    matches = optimizeCourtAssignments(matches, playerCourtHistory);
+    updateCourtHistory(matches, playerCourtHistory);
     
     // Leftover pairs become byes
     if (validPairs.length % 2 !== 0) {

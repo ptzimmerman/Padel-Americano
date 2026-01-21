@@ -27,6 +27,7 @@ export interface Tournament {
   players: Player[];
   rounds: Round[];
   isStarted: boolean;
+  courtNames?: string[]; // Custom court names (e.g., "Court A", "Center Court", etc.)
 }
 
 export interface LeaderboardEntry {
