@@ -2,6 +2,7 @@
 export interface Player {
   id: string;
   name: string;
+  nickname?: string;
 }
 
 export interface Match {
@@ -33,6 +34,7 @@ export interface Tournament {
 export interface LeaderboardEntry {
   playerId: string;
   playerName: string;
+  playerNickname?: string;
   totalPoints: number;
   matchesPlayed: number;
   avgPoints: number;
