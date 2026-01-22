@@ -435,8 +435,8 @@ const App: React.FC = () => {
   };
 
   const PlayerName = ({ name, nickname, baseClass, inline = false }: { name: string, nickname?: string, baseClass: string, inline?: boolean }) => {
-    if (inline || !nickname) {
-      // Inline mode for leaderboard or when no nickname
+    if (inline) {
+      // Inline mode for leaderboard, player list, byes
       return (
         <span className={baseClass}>
           {name}
@@ -446,11 +446,13 @@ const App: React.FC = () => {
         </span>
       );
     }
-    // Stacked mode for match cards - nickname on separate line
+    // Block mode for match cards - always use divs for proper stacking
     return (
       <div className={baseClass}>
         <div>{name}</div>
-        <div className="text-indigo-400 font-medium not-italic text-xs md:text-sm tracking-wide mt-0.5">"{nickname}"</div>
+        {nickname && (
+          <div className="text-indigo-400 font-medium not-italic text-xs md:text-sm tracking-wide mt-0.5">"{nickname}"</div>
+        )}
       </div>
     );
   };
