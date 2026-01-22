@@ -2,10 +2,12 @@
 
 A modern web app for running **Padel Americano** tournaments — the social format where players rotate partners each round so everyone plays with and against different people.
 
+**Live at [padelme.io](https://padelme.io)**
+
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript)
 ![Vite](https://img.shields.io/badge/Vite-6-646CFF?logo=vite)
-![Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-000?logo=vercel)
+![Cloudflare](https://img.shields.io/badge/Deployed%20on-Cloudflare%20Pages-F38020?logo=cloudflare)
 
 ## Features
 
@@ -21,6 +23,16 @@ A modern web app for running **Padel Americano** tournaments — the social form
 - ✅ **Championship Round** — Create finals: 1st+3rd vs 2nd+4th place
 - ✅ **Championship Results** — Shows winning team, runner-up, and individual rankings
 - ✅ **Locked Setup** — Players locked once tournament starts (prevents accidents)
+
+### Sharing & Cloud Sync
+- ✅ **Shareable Links** — Share your tournament with spectators via unique URL
+- ✅ **Real-time Sync** — Scores sync to cloud, viewers see updates automatically
+- ✅ **Read-only Viewing** — Spectators can view rounds and scores without editing
+- ✅ **Auto-cleanup** — Shared tournaments expire after 24 hours
+
+### AI-Powered Features
+- ✅ **AI Nicknames** — Generate fun padel-themed nicknames for players (powered by Anthropic Claude)
+- ✅ **Optional** — Checkbox to enable/disable nickname generation
 
 ### User Experience
 - ✅ **Mobile-First** — Responsive design works great on phones at the courts
@@ -84,23 +96,42 @@ npm run preview  # Preview production build locally
 
 ```
 ├── App.tsx              # Main React component (UI + state)
+├── GameViewer.tsx       # Read-only viewer for shared tournaments
 ├── types.ts             # TypeScript interfaces
 ├── utils/
 │   └── scheduler.ts     # Tournament scheduling + additional rounds
-├── index.tsx            # React entry point
-├── index.html           # HTML shell + Tailwind CDN
+├── functions/           # Cloudflare Pages Functions (serverless API)
+│   ├── api/
+│   │   ├── game.ts      # POST /api/game - create shared tournament
+│   │   ├── game/[id].ts # GET/PUT/DELETE /api/game/:id
+│   │   └── nicknames.ts # POST /api/nicknames - AI nickname generation
+│   └── types.ts         # API types
+├── index.tsx            # React entry point + routing
+├── index.html           # HTML shell + OG meta tags
+├── wrangler.toml        # Cloudflare config (KV bindings)
 └── CLAUDE.md            # AI agent context file
 ```
 
 ## Deployment
 
-The app is deployed on **Vercel**. Push to `main` for production, or create a PR for a preview deployment.
+The app is deployed on **Cloudflare Pages** at [padelme.io](https://padelme.io).
+
+- Push to `main` → deploys to production
+- Create a PR → generates a preview deployment
+
+### Environment Variables (Cloudflare Pages)
+
+| Variable | Description |
+|----------|-------------|
+| `ANTHROPIC_API_KEY` | API key for AI nickname generation |
+
+KV Namespace `TOURNAMENTS` is used for cloud-synced tournament storage.
 
 ## Contributing
 
 1. Create a feature branch: `git checkout -b feature/your-feature`
 2. Make changes and test locally
-3. Open a PR — Vercel will generate a preview link
+3. Open a PR — Cloudflare will generate a preview link
 4. Merge after review
 
 ## License
