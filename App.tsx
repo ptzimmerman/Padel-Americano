@@ -434,13 +434,23 @@ const App: React.FC = () => {
     setTournament({ ...tournament, rounds: newRounds });
   };
 
-  const PlayerName = ({ name, nickname, baseClass }: { name: string, nickname?: string, baseClass: string }) => {
+  const PlayerName = ({ name, nickname, baseClass, inline = false }: { name: string, nickname?: string, baseClass: string, inline?: boolean }) => {
+    if (inline || !nickname) {
+      // Inline mode for leaderboard or when no nickname
+      return (
+        <span className={baseClass}>
+          {name}
+          {nickname && (
+            <span className="text-indigo-400 font-semibold not-italic text-[0.65em] ml-2">"{nickname}"</span>
+          )}
+        </span>
+      );
+    }
+    // Stacked mode for match cards - nickname on separate line
     return (
-      <span className={baseClass}>
-        {name}
-        {nickname && (
-          <span className="text-indigo-500 font-bold not-italic"> "{nickname}"</span>
-        )}
+      <span className={`${baseClass} flex flex-col`}>
+        <span>{name}</span>
+        <span className="text-indigo-400 font-medium not-italic text-[0.55em] tracking-wide">"{nickname}"</span>
       </span>
     );
   };
@@ -596,7 +606,7 @@ const App: React.FC = () => {
                   <div key={p.id} className="flex items-center justify-between bg-white border-2 border-slate-50 rounded-2xl md:rounded-[2rem] px-5 md:px-8 py-4 md:py-6 hover:border-indigo-100 shadow-sm transition-all group">
                     <span className="flex items-center tracking-tight min-w-0">
                       <span className="text-slate-300 mr-2 md:mr-3 font-black text-lg md:text-xl shrink-0">{idx+1}</span>
-                      <PlayerName name={p.name} nickname={p.nickname} baseClass="font-black text-slate-800 text-lg md:text-xl" />
+                      <PlayerName name={p.name} nickname={p.nickname} baseClass="font-black text-slate-800 text-lg md:text-xl" inline />
                     </span>
                     {!tournament && (
                     <button onClick={() => removePlayer(p.id)} className="text-slate-200 group-hover:text-rose-500 shrink-0"><Trash2 className="w-5 h-5 md:w-6 md:h-6" /></button>
@@ -777,7 +787,7 @@ const App: React.FC = () => {
                     const player = getPlayer(id);
                     return (
                     <div key={id} className="bg-white px-4 py-2 md:px-6 md:py-4 rounded-xl md:rounded-2xl shadow-sm border border-amber-200">
-                        <PlayerName name={player?.name || ''} nickname={player?.nickname} baseClass="font-black text-sm md:text-xl" />
+                        <PlayerName name={player?.name || ''} nickname={player?.nickname} baseClass="font-black text-sm md:text-xl" inline />
                     </div>
                     );
                   })}
@@ -999,7 +1009,7 @@ const App: React.FC = () => {
                           </div>
                         </td>
                         <td className="px-4 md:px-12 py-6 md:py-10">
-                          <PlayerName name={entry.playerName} nickname={entry.playerNickname} baseClass="font-black text-slate-900 text-lg md:text-2xl italic uppercase block" />
+                          <PlayerName name={entry.playerName} nickname={entry.playerNickname} baseClass="font-black text-slate-900 text-lg md:text-2xl italic uppercase" inline />
                           <div className="text-[8px] md:text-[10px] text-slate-400 font-bold uppercase mt-1">Avg {entry.avgPoints} / Match</div>
                         </td>
                         <td className="px-4 md:px-12 py-6 md:py-10 text-center whitespace-nowrap">
