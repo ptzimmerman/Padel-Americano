@@ -53,7 +53,6 @@ const App: React.FC = () => {
   });
   const [showShareModal, setShowShareModal] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
-  const [copiedPin, setCopiedPin] = useState(false);
   
   // Nickname generation
   const [generateNicknames, setGenerateNicknames] = useState(false);
@@ -235,16 +234,11 @@ const App: React.FC = () => {
     });
   };
 
-  const copyToClipboard = async (text: string, type: 'url' | 'pin') => {
+  const copyToClipboard = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      if (type === 'url') {
-        setCopiedUrl(true);
-        setTimeout(() => setCopiedUrl(false), 2000);
-      } else {
-        setCopiedPin(true);
-        setTimeout(() => setCopiedPin(false), 2000);
-      }
+      setCopiedUrl(true);
+      setTimeout(() => setCopiedUrl(false), 2000);
     } catch (err) {
       console.error('Failed to copy:', err);
     }
@@ -824,32 +818,13 @@ const App: React.FC = () => {
                       className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-mono text-slate-700"
                     />
                     <button 
-                      onClick={() => copyToClipboard(shareState.shareUrl || '', 'url')}
+                      onClick={() => copyToClipboard(shareState.shareUrl || '')}
                       className={`px-4 rounded-xl font-bold transition-all ${copiedUrl ? 'bg-emerald-500 text-white' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
                     >
                       {copiedUrl ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
                     </button>
                   </div>
-                </div>
-                
-                {/* PIN */}
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-2">Your PIN (keep private)</label>
-                  <div className="flex gap-2">
-                    <input 
-                      type="text" 
-                      readOnly 
-                      value={shareState.pin || ''} 
-                      className="flex-1 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-lg font-mono font-black text-amber-700 tracking-widest text-center"
-                    />
-                    <button 
-                      onClick={() => copyToClipboard(shareState.pin || '', 'pin')}
-                      className={`px-4 rounded-xl font-bold transition-all ${copiedPin ? 'bg-emerald-500 text-white' : 'bg-amber-500 text-white hover:bg-amber-600'}`}
-                    >
-                      {copiedPin ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
-                    </button>
-                  </div>
-                  <p className="text-[10px] text-slate-400 mt-2">Only you can update scores. Others can view only.</p>
+                  <p className="text-[10px] text-slate-400 mt-2">Anyone with this link can view the tournament.</p>
                 </div>
                 
                 {/* Status */}
