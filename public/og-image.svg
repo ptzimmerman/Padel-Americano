@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4f46e5"/>
+      <stop offset="100%" style="stop-color:#7c3aed"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:0.15"/>
+      <stop offset="100%" style="stop-color:#ffffff;stop-opacity:0.05"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  
+  <!-- Decorative circles -->
+  <circle cx="100" cy="100" r="200" fill="white" opacity="0.05"/>
+  <circle cx="1100" cy="530" r="250" fill="white" opacity="0.05"/>
+  <circle cx="900" cy="100" r="150" fill="white" opacity="0.03"/>
+  
+  <!-- Main content card -->
+  <rect x="80" y="120" width="1040" height="390" rx="40" fill="url(#card)"/>
+  
+  <!-- Padel racket icon -->
+  <g transform="translate(150, 220)">
+    <ellipse cx="60" cy="70" rx="50" ry="65" fill="none" stroke="white" stroke-width="6"/>
+    <line x1="60" y1="135" x2="60" y2="200" stroke="white" stroke-width="8" stroke-linecap="round"/>
+    <circle cx="60" cy="70" r="8" fill="white"/>
+    <!-- Grid lines -->
+    <line x1="25" y1="40" x2="95" y2="40" stroke="white" stroke-width="2" opacity="0.6"/>
+    <line x1="20" y1="70" x2="100" y2="70" stroke="white" stroke-width="2" opacity="0.6"/>
+    <line x1="25" y1="100" x2="95" y2="100" stroke="white" stroke-width="2" opacity="0.6"/>
+    <line x1="40" y1="15" x2="40" y2="125" stroke="white" stroke-width="2" opacity="0.6"/>
+    <line x1="60" y1="5" x2="60" y2="135" stroke="white" stroke-width="2" opacity="0.6"/>
+    <line x1="80" y1="15" x2="80" y2="125" stroke="white" stroke-width="2" opacity="0.6"/>
+  </g>
+  
+  <!-- Title -->
+  <text x="300" y="280" font-family="Inter, system-ui, sans-serif" font-size="72" font-weight="900" fill="white" font-style="italic">
+    AMERICANO
+  </text>
+  <text x="300" y="360" font-family="Inter, system-ui, sans-serif" font-size="72" font-weight="900" fill="#a5b4fc" font-style="italic">
+    PADEL
+  </text>
+  
+  <!-- Subtitle -->
+  <text x="300" y="420" font-family="Inter, system-ui, sans-serif" font-size="28" font-weight="600" fill="white" opacity="0.9">
+    Smart Tournament Manager
+  </text>
+  
+  <!-- Features -->
+  <g transform="translate(300, 460)" font-family="Inter, system-ui, sans-serif" font-size="18" fill="white" opacity="0.7">
+    <text x="0" y="0">🎾 Fair Matchups</text>
+    <text x="180" y="0">📊 Live Scoring</text>
+    <text x="360" y="0">🔗 Shareable Links</text>
+  </g>
+  
+  <!-- Ball decoration -->
+  <circle cx="1000" cy="300" r="80" fill="none" stroke="white" stroke-width="4" opacity="0.3"/>
+  <path d="M920 300 Q1000 250 1080 300" fill="none" stroke="white" stroke-width="3" opacity="0.3"/>
+  <path d="M920 300 Q1000 350 1080 300" fill="none" stroke="white" stroke-width="3" opacity="0.3"/>
+</svg>
