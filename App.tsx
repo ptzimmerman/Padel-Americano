@@ -267,25 +267,35 @@ const App: React.FC = () => {
     if (generateNicknames) {
       setIsGeneratingNicknames(true);
       try {
+        console.log('Fetching nicknames for:', players.map(p => p.name));
         const response = await fetch('/api/nicknames', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ names: players.map(p => p.name) }),
         });
         
+        console.log('Nickname API response status:', response.status);
+        
         if (response.ok) {
           const data = await response.json();
-          tournamentPlayers = players.map(p => ({
-            ...p,
-            nickname: data.nicknames[p.name] || undefined,
-          }));
-          // Also update the players state so nicknames persist
-          setPlayers(tournamentPlayers);
+          console.log('Nicknames received:', data);
+          
+          if (data.nicknames) {
+            tournamentPlayers = players.map(p => ({
+              ...p,
+              nickname: data.nicknames[p.name] || undefined,
+            }));
+            // Also update the players state so nicknames persist
+            setPlayers(tournamentPlayers);
+          }
         } else {
-          console.error('Failed to generate nicknames');
+          const errorText = await response.text();
+          console.error('Failed to generate nicknames:', response.status, errorText);
+          alert('Failed to generate nicknames. Proceeding without them.');
         }
       } catch (error) {
         console.error('Error generating nicknames:', error);
+        alert('Error connecting to nickname service. Proceeding without nicknames.');
       } finally {
         setIsGeneratingNicknames(false);
       }
@@ -526,15 +536,15 @@ const App: React.FC = () => {
             <p className="text-slate-400 font-bold uppercase text-[9px] md:text-[10px] tracking-[0.2em] md:tracking-[0.3em] pl-1">Professional Whist Logic</p>
           </div>
           <div className="flex items-center gap-3 self-center md:self-auto">
-            {isPerfect && (
+          {isPerfect && (
               <div className="flex items-center gap-3 bg-emerald-50 text-emerald-700 px-4 py-2 md:px-6 md:py-3 rounded-2xl md:rounded-[1.5rem] border border-emerald-100 shadow-sm">
-                <ShieldCheck className="w-5 h-5 text-emerald-500" />
-                <div className="flex flex-col">
-                  <span className="text-[8px] md:text-[10px] font-black uppercase tracking-widest leading-none mb-1">Whist Tournament</span>
-                  <span className="text-xs md:text-sm font-bold leading-none">Perfect Balance Active</span>
-                </div>
+              <ShieldCheck className="w-5 h-5 text-emerald-500" />
+              <div className="flex flex-col">
+                <span className="text-[8px] md:text-[10px] font-black uppercase tracking-widest leading-none mb-1">Whist Tournament</span>
+                <span className="text-xs md:text-sm font-bold leading-none">Perfect Balance Active</span>
               </div>
-            )}
+            </div>
+          )}
             {tournament && (
               <button
                 onClick={() => shareState.isSharing ? setShowShareModal(true) : startSharing()}
@@ -589,7 +599,7 @@ const App: React.FC = () => {
                       <PlayerName name={p.name} nickname={p.nickname} baseClass="font-black text-slate-800 text-lg md:text-xl" />
                     </span>
                     {!tournament && (
-                      <button onClick={() => removePlayer(p.id)} className="text-slate-200 group-hover:text-rose-500 shrink-0"><Trash2 className="w-5 h-5 md:w-6 md:h-6" /></button>
+                    <button onClick={() => removePlayer(p.id)} className="text-slate-200 group-hover:text-rose-500 shrink-0"><Trash2 className="w-5 h-5 md:w-6 md:h-6" /></button>
                     )}
                   </div>
                 ))}
@@ -701,7 +711,7 @@ const App: React.FC = () => {
                     <Trophy className="w-3 h-3 md:w-4 md:h-4" /> Championship Round
                   </div>
                 ) : (
-                  <span className="text-[9px] md:text-[10px] font-black uppercase tracking-[0.2em] md:tracking-[0.4em] text-slate-400 block mb-1">Round</span>
+                <span className="text-[9px] md:text-[10px] font-black uppercase tracking-[0.2em] md:tracking-[0.4em] text-slate-400 block mb-1">Round</span>
                 )}
                 <div className="text-4xl md:text-7xl font-black text-slate-900 flex items-center justify-center gap-2">
                   {currentRoundIndex + 1}<span className="text-slate-300 text-base md:text-2xl font-bold">/ {tournament.rounds.length}</span>
@@ -766,9 +776,9 @@ const App: React.FC = () => {
                   {tournament.rounds[currentRoundIndex].byes.map(id => {
                     const player = getPlayer(id);
                     return (
-                      <div key={id} className="bg-white px-4 py-2 md:px-6 md:py-4 rounded-xl md:rounded-2xl shadow-sm border border-amber-200">
+                    <div key={id} className="bg-white px-4 py-2 md:px-6 md:py-4 rounded-xl md:rounded-2xl shadow-sm border border-amber-200">
                         <PlayerName name={player?.name || ''} nickname={player?.nickname} baseClass="font-black text-sm md:text-xl" />
-                      </div>
+                    </div>
                     );
                   })}
                 </div>
