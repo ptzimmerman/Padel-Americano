@@ -389,9 +389,8 @@ const App: React.FC = () => {
   };
 
   const PlayerName = ({ name, baseClass }: { name: string, baseClass: string }) => {
-    const isPete = name.trim().toLowerCase() === 'pete';
     return (
-      <span className={`${baseClass} ${isPete ? 'scale-50 origin-left inline-block' : ''}`}>
+      <span className={baseClass}>
         {name}
       </span>
     );
