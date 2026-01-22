@@ -1,0 +1,9 @@
+name = "padel-americano"
+compatibility_date = "2024-01-01"
+pages_build_output_dir = "dist"
+
+# KV Namespace for storing shared tournaments
+[[kv_namespaces]]
+binding = "TOURNAMENTS"
+id = "858eda2b7bf84ae2acf818fa84b02be3"
+preview_id = "e0f5a8829d2a4d2183d0d625706627eb"

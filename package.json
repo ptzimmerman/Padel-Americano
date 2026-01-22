@@ -9,14 +9,17 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "lucide-react": "0.460.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
-    "lucide-react": "0.460.0"
+    "react-router-dom": "^7.12.0"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260122.0",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "vite": "^6.2.0",
+    "wrangler": "^4.60.0"
   }
 }

@@ -15,8 +15,23 @@ import {
   Info,
   Award,
   ShieldCheck,
-  Zap
+  Zap,
+  Share2,
+  Copy,
+  Check,
+  Loader2,
+  Link as LinkIcon,
+  X
 } from 'lucide-react';
+
+interface ShareState {
+  isSharing: boolean;
+  shareId: string | null;
+  pin: string | null;
+  shareUrl: string | null;
+  isSyncing: boolean;
+  lastSynced: Date | null;
+}
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'setup' | 'rounds' | 'leaderboard'>('setup');
@@ -25,6 +40,19 @@ const App: React.FC = () => {
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [currentRoundIndex, setCurrentRoundIndex] = useState(0);
   const [courtNames, setCourtNames] = useState<string[]>([]);
+  
+  // Sharing state
+  const [shareState, setShareState] = useState<ShareState>({
+    isSharing: false,
+    shareId: null,
+    pin: null,
+    shareUrl: null,
+    isSyncing: false,
+    lastSynced: null,
+  });
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState(false);
+  const [copiedPin, setCopiedPin] = useState(false);
 
   // Calculate number of courts based on player count
   const numCourts = Math.floor(players.length / 4);
@@ -78,6 +106,145 @@ const App: React.FC = () => {
     }
   }, [courtNames]);
 
+  // Load share state from localStorage
+  useEffect(() => {
+    const savedShare = localStorage.getItem('padel_share_state');
+    if (savedShare) {
+      try {
+        const parsed = JSON.parse(savedShare);
+        setShareState(prev => ({
+          ...prev,
+          isSharing: parsed.isSharing,
+          shareId: parsed.shareId,
+          pin: parsed.pin,
+          shareUrl: parsed.shareUrl,
+        }));
+      } catch (e) {
+        console.error("Failed to load share state", e);
+      }
+    }
+  }, []);
+
+  // Save share state to localStorage
+  useEffect(() => {
+    if (shareState.isSharing) {
+      localStorage.setItem('padel_share_state', JSON.stringify({
+        isSharing: shareState.isSharing,
+        shareId: shareState.shareId,
+        pin: shareState.pin,
+        shareUrl: shareState.shareUrl,
+      }));
+    } else {
+      localStorage.removeItem('padel_share_state');
+    }
+  }, [shareState.isSharing, shareState.shareId, shareState.pin, shareState.shareUrl]);
+
+  // Sync tournament to cloud when it changes (if sharing is active)
+  useEffect(() => {
+    if (!shareState.isSharing || !shareState.shareId || !shareState.pin || !tournament) return;
+    
+    const syncToCloud = async () => {
+      setShareState(prev => ({ ...prev, isSyncing: true }));
+      try {
+        const response = await fetch(`/api/game/${shareState.shareId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Tournament-Pin': shareState.pin,
+          },
+          body: JSON.stringify({ tournament }),
+        });
+        
+        if (response.ok) {
+          setShareState(prev => ({ ...prev, lastSynced: new Date() }));
+        } else {
+          console.error('Failed to sync:', await response.text());
+        }
+      } catch (error) {
+        console.error('Sync error:', error);
+      } finally {
+        setShareState(prev => ({ ...prev, isSyncing: false }));
+      }
+    };
+
+    // Debounce sync
+    const timer = setTimeout(syncToCloud, 500);
+    return () => clearTimeout(timer);
+  }, [tournament, shareState.isSharing, shareState.shareId, shareState.pin]);
+
+  const startSharing = async () => {
+    if (!tournament) return;
+    
+    setShareState(prev => ({ ...prev, isSyncing: true }));
+    try {
+      const response = await fetch('/api/game', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tournament }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to create shared game');
+      }
+      
+      const data = await response.json();
+      const fullUrl = `${window.location.origin}/game/${data.id}`;
+      
+      setShareState({
+        isSharing: true,
+        shareId: data.id,
+        pin: data.pin,
+        shareUrl: fullUrl,
+        isSyncing: false,
+        lastSynced: new Date(),
+      });
+      setShowShareModal(true);
+    } catch (error) {
+      console.error('Failed to start sharing:', error);
+      alert('Failed to create shared game. Please try again.');
+      setShareState(prev => ({ ...prev, isSyncing: false }));
+    }
+  };
+
+  const stopSharing = async () => {
+    if (!shareState.shareId || !shareState.pin) return;
+    
+    if (!window.confirm('Stop sharing this tournament? Others will no longer be able to view it.')) return;
+    
+    try {
+      await fetch(`/api/game/${shareState.shareId}`, {
+        method: 'DELETE',
+        headers: { 'X-Tournament-Pin': shareState.pin },
+      });
+    } catch (error) {
+      console.error('Failed to delete shared game:', error);
+    }
+    
+    setShareState({
+      isSharing: false,
+      shareId: null,
+      pin: null,
+      shareUrl: null,
+      isSyncing: false,
+      lastSynced: null,
+    });
+  };
+
+  const copyToClipboard = async (text: string, type: 'url' | 'pin') => {
+    try {
+      await navigator.clipboard.writeText(text);
+      if (type === 'url') {
+        setCopiedUrl(true);
+        setTimeout(() => setCopiedUrl(false), 2000);
+      } else {
+        setCopiedPin(true);
+        setTimeout(() => setCopiedPin(false), 2000);
+      }
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
   const addPlayer = () => {
     if (!newPlayerName.trim()) return;
     setPlayers([...players, { id: crypto.randomUUID(), name: newPlayerName.trim() }]);
@@ -117,22 +284,61 @@ const App: React.FC = () => {
     return `Court ${courtIndex + 1}`;
   };
 
-  const resetTournament = () => {
+  const resetTournament = async () => {
     if (window.confirm("End tournament? Scores will be lost.")) {
+      // Stop sharing if active
+      if (shareState.isSharing && shareState.shareId && shareState.pin) {
+        try {
+          await fetch(`/api/game/${shareState.shareId}`, {
+            method: 'DELETE',
+            headers: { 'X-Tournament-Pin': shareState.pin },
+          });
+        } catch (e) {
+          console.error('Failed to delete shared game:', e);
+        }
+        setShareState({
+          isSharing: false,
+          shareId: null,
+          pin: null,
+          shareUrl: null,
+          isSyncing: false,
+          lastSynced: null,
+        });
+      }
       setTournament(null);
       localStorage.removeItem('padel_tournament');
       setActiveTab('setup');
     }
   };
 
-  const clearAllData = () => {
+  const clearAllData = async () => {
     if (window.confirm("Clear ALL data? This will remove all players and tournament data.")) {
+      // Stop sharing if active
+      if (shareState.isSharing && shareState.shareId && shareState.pin) {
+        try {
+          await fetch(`/api/game/${shareState.shareId}`, {
+            method: 'DELETE',
+            headers: { 'X-Tournament-Pin': shareState.pin },
+          });
+        } catch (e) {
+          console.error('Failed to delete shared game:', e);
+        }
+        setShareState({
+          isSharing: false,
+          shareId: null,
+          pin: null,
+          shareUrl: null,
+          isSyncing: false,
+          lastSynced: null,
+        });
+      }
       setTournament(null);
       setPlayers([]);
       setCourtNames([]);
       localStorage.removeItem('padel_tournament');
       localStorage.removeItem('padel_players');
       localStorage.removeItem('padel_court_names');
+      localStorage.removeItem('padel_share_state');
       setActiveTab('setup');
     }
   };
@@ -278,15 +484,37 @@ const App: React.FC = () => {
             </div>
             <p className="text-slate-400 font-bold uppercase text-[9px] md:text-[10px] tracking-[0.2em] md:tracking-[0.3em] pl-1">Professional Whist Logic</p>
           </div>
-          {isPerfect && (
-            <div className="flex items-center gap-3 bg-emerald-50 text-emerald-700 px-4 py-2 md:px-6 md:py-3 rounded-2xl md:rounded-[1.5rem] border border-emerald-100 shadow-sm self-center md:self-auto">
-              <ShieldCheck className="w-5 h-5 text-emerald-500" />
-              <div className="flex flex-col">
-                <span className="text-[8px] md:text-[10px] font-black uppercase tracking-widest leading-none mb-1">Whist Tournament</span>
-                <span className="text-xs md:text-sm font-bold leading-none">Perfect Balance Active</span>
+          <div className="flex items-center gap-3 self-center md:self-auto">
+            {isPerfect && (
+              <div className="flex items-center gap-3 bg-emerald-50 text-emerald-700 px-4 py-2 md:px-6 md:py-3 rounded-2xl md:rounded-[1.5rem] border border-emerald-100 shadow-sm">
+                <ShieldCheck className="w-5 h-5 text-emerald-500" />
+                <div className="flex flex-col">
+                  <span className="text-[8px] md:text-[10px] font-black uppercase tracking-widest leading-none mb-1">Whist Tournament</span>
+                  <span className="text-xs md:text-sm font-bold leading-none">Perfect Balance Active</span>
+                </div>
               </div>
-            </div>
-          )}
+            )}
+            {tournament && (
+              <button
+                onClick={() => shareState.isSharing ? setShowShareModal(true) : startSharing()}
+                disabled={shareState.isSyncing}
+                className={`flex items-center gap-2 px-4 py-2 md:px-5 md:py-3 rounded-2xl font-bold transition-all active:scale-95 ${
+                  shareState.isSharing 
+                    ? 'bg-indigo-100 text-indigo-700 border border-indigo-200' 
+                    : 'bg-indigo-600 text-white shadow-lg'
+                }`}
+              >
+                {shareState.isSyncing ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : shareState.isSharing ? (
+                  <LinkIcon className="w-4 h-4" />
+                ) : (
+                  <Share2 className="w-4 h-4" />
+                )}
+                <span className="text-sm">{shareState.isSharing ? 'Sharing' : 'Share'}</span>
+              </button>
+            )}
+          </div>
         </header>
 
         {activeTab === 'setup' && (
@@ -470,6 +698,86 @@ const App: React.FC = () => {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Share Modal */}
+        {showShareModal && shareState.isSharing && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4" onClick={() => setShowShareModal(false)}>
+            <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 md:p-8" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-black text-slate-800 flex items-center gap-2">
+                  <Share2 className="w-5 h-5 text-indigo-600" /> Share Tournament
+                </h2>
+                <button onClick={() => setShowShareModal(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-colors">
+                  <X className="w-5 h-5 text-slate-400" />
+                </button>
+              </div>
+              
+              <div className="space-y-4">
+                {/* Share URL */}
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-2">Share Link</label>
+                  <div className="flex gap-2">
+                    <input 
+                      type="text" 
+                      readOnly 
+                      value={shareState.shareUrl || ''} 
+                      className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-mono text-slate-700"
+                    />
+                    <button 
+                      onClick={() => copyToClipboard(shareState.shareUrl || '', 'url')}
+                      className={`px-4 rounded-xl font-bold transition-all ${copiedUrl ? 'bg-emerald-500 text-white' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
+                    >
+                      {copiedUrl ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
+                    </button>
+                  </div>
+                </div>
+                
+                {/* PIN */}
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-2">Your PIN (keep private)</label>
+                  <div className="flex gap-2">
+                    <input 
+                      type="text" 
+                      readOnly 
+                      value={shareState.pin || ''} 
+                      className="flex-1 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-lg font-mono font-black text-amber-700 tracking-widest text-center"
+                    />
+                    <button 
+                      onClick={() => copyToClipboard(shareState.pin || '', 'pin')}
+                      className={`px-4 rounded-xl font-bold transition-all ${copiedPin ? 'bg-emerald-500 text-white' : 'bg-amber-500 text-white hover:bg-amber-600'}`}
+                    >
+                      {copiedPin ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-2">Only you can update scores. Others can view only.</p>
+                </div>
+                
+                {/* Status */}
+                <div className="bg-slate-50 rounded-xl p-4 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${shareState.isSyncing ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`} />
+                    <span className="text-sm font-bold text-slate-600">
+                      {shareState.isSyncing ? 'Syncing...' : 'Live & Synced'}
+                    </span>
+                  </div>
+                  {shareState.lastSynced && (
+                    <span className="text-[10px] text-slate-400">
+                      Last: {shareState.lastSynced.toLocaleTimeString()}
+                    </span>
+                  )}
+                </div>
+                
+                {/* Stop Sharing */}
+                <button 
+                  onClick={stopSharing}
+                  className="w-full py-3 text-rose-500 hover:bg-rose-50 rounded-xl font-bold text-sm transition-colors"
+                >
+                  Stop Sharing
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
