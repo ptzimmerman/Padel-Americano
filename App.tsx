@@ -448,10 +448,10 @@ const App: React.FC = () => {
     }
     // Stacked mode for match cards - nickname on separate line
     return (
-      <span className={`${baseClass} flex flex-col`}>
-        <span>{name}</span>
-        <span className="text-indigo-400 font-medium not-italic text-[0.55em] tracking-wide">"{nickname}"</span>
-      </span>
+      <div className={baseClass}>
+        <div>{name}</div>
+        <div className="text-indigo-400 font-medium not-italic text-xs md:text-sm tracking-wide mt-0.5">"{nickname}"</div>
+      </div>
     );
   };
 
@@ -761,18 +761,18 @@ const App: React.FC = () => {
                       {match.isCompleted && <span className="text-emerald-500 flex items-center gap-1"><ShieldCheck size={12}/> Done</span>}
                     </div>
                     <div className="p-6 md:p-14 flex flex-col md:grid md:grid-cols-7 items-center gap-6 md:gap-8">
-                      <div className="w-full md:col-span-2 text-center md:text-right space-y-1 pr-1">
-                        <PlayerName name={p1a?.name || 'Unknown'} nickname={p1a?.nickname} baseClass={`text-xl md:text-3xl font-[900] tracking-tight italic block ${teamAWon ? winnerTextClass : 'text-slate-900'}`} />
-                        <PlayerName name={p2a?.name || 'Unknown'} nickname={p2a?.nickname} baseClass={`text-xl md:text-3xl font-[900] tracking-tight italic block ${teamAWon ? winnerTextClass : 'text-slate-900'}`} />
+                      <div className="w-full md:col-span-2 text-center md:text-right space-y-3 md:space-y-4 pr-1">
+                        <PlayerName name={p1a?.name || 'Unknown'} nickname={p1a?.nickname} baseClass={`text-xl md:text-3xl font-[900] tracking-tight italic ${teamAWon ? winnerTextClass : 'text-slate-900'}`} />
+                        <PlayerName name={p2a?.name || 'Unknown'} nickname={p2a?.nickname} baseClass={`text-xl md:text-3xl font-[900] tracking-tight italic ${teamAWon ? winnerTextClass : 'text-slate-900'}`} />
                       </div>
                       <div className="w-full md:col-span-3 flex items-center justify-center gap-4 md:gap-6">
                         <input type="number" value={match.scoreA ?? ''} onChange={(e) => updateScore(currentRoundIndex, match.id, 'A', e.target.value)} className={`w-16 h-16 md:w-28 md:h-28 text-center text-3xl md:text-5xl font-black bg-slate-50 border-2 md:border-4 border-slate-100 rounded-2xl md:rounded-[2.5rem] focus:border-indigo-600 focus:bg-white transition-all outline-none ${teamAWon ? winnerInputClass : ''}`} placeholder="0" />
                         <span className="text-slate-200 font-black italic text-sm md:text-xl shrink-0">VS</span>
                         <input type="number" value={match.scoreB ?? ''} onChange={(e) => updateScore(currentRoundIndex, match.id, 'B', e.target.value)} className={`w-16 h-16 md:w-28 md:h-28 text-center text-3xl md:text-5xl font-black bg-slate-50 border-2 md:border-4 border-slate-100 rounded-2xl md:rounded-[2.5rem] focus:border-indigo-600 focus:bg-white transition-all outline-none ${teamBWon ? winnerInputClass : ''}`} placeholder="0" />
                       </div>
-                      <div className="w-full md:col-span-2 text-center md:text-left space-y-1 pl-1">
-                        <PlayerName name={p1b?.name || 'Unknown'} nickname={p1b?.nickname} baseClass={`text-xl md:text-3xl font-[900] tracking-tight italic block ${teamBWon ? winnerTextClass : 'text-slate-900'}`} />
-                        <PlayerName name={p2b?.name || 'Unknown'} nickname={p2b?.nickname} baseClass={`text-xl md:text-3xl font-[900] tracking-tight italic block ${teamBWon ? winnerTextClass : 'text-slate-900'}`} />
+                      <div className="w-full md:col-span-2 text-center md:text-left space-y-3 md:space-y-4 pl-1">
+                        <PlayerName name={p1b?.name || 'Unknown'} nickname={p1b?.nickname} baseClass={`text-xl md:text-3xl font-[900] tracking-tight italic ${teamBWon ? winnerTextClass : 'text-slate-900'}`} />
+                        <PlayerName name={p2b?.name || 'Unknown'} nickname={p2b?.nickname} baseClass={`text-xl md:text-3xl font-[900] tracking-tight italic ${teamBWon ? winnerTextClass : 'text-slate-900'}`} />
                       </div>
                     </div>
                   </div>
