@@ -86,14 +86,13 @@ npm run preview # Preview production build
 
 ## Known Quirks
 
-- Easter egg: player named "Pete" renders at 50% scale (see `PlayerName` component)
 - The hardcoded schedules in `SCHEDULE_8` and `SCHEDULE_16` are verified optimal and should not be modified
 - Court optimization uses brute-force permutation (fine for ≤4 courts)
 - Championship detection uses `match.id.includes('championship')`
+- PIN is stored internally for cloud sync but not displayed to users
 
 ## Future Enhancements
 
-- [ ] Export/share tournament results
 - [ ] Multiple tournament history
-- [ ] Real-time sync between devices
 - [ ] Print-friendly bracket view
+- [ ] Player profiles with persistent stats (Groups & Auth spec exists)
