@@ -46,13 +46,15 @@
 - Player roster locked after tournament starts
 - Perfect schedules for 8, 12, 16 players
 
-**Event Mode** (Totogi Padel Invitational):
+**Event Mode** (Totogi Padel Invitational — MWC Barcelona, Sunday March 1 2026):
+- Expected 25-30 players, ~8 Totogi staff, 4 courts, games to 16
 - Rounds generated one-at-a-time with skill-balanced matchmaking
-- Players can be added/removed between rounds
+- Players can be added/removed between rounds (kiosk supports AI nickname generation)
 - `isTotogian` flag for sponsor players (grayed out, not eligible for prizes)
 - `skillLevel` (low/medium/high) drives team balancing
 - `isActive` toggle for round-by-round player pool management
 - Dedicated kiosk and leaderboard display views
+- Organizer app polls KV every 4s to pick up kiosk player additions/status changes
 
 ### Scheduling Logic (`utils/scheduler.ts`)
 

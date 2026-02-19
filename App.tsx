@@ -1404,13 +1404,13 @@ const App: React.FC = () => {
             )}
             
             <div className="bg-white rounded-3xl md:rounded-[4rem] shadow-sm border border-slate-200 overflow-hidden">
-              <div className="px-6 md:px-12 py-6 md:py-8 border-b border-slate-100 flex items-center justify-between">
-                <h2 className="text-xl md:text-2xl font-black text-slate-800 flex items-center gap-2 md:gap-3"><Award className="w-6 h-6 md:w-7 md:h-7 text-yellow-500" /> Standings</h2>
+              <div className="px-5 md:px-12 py-5 md:py-8 border-b border-slate-100 flex items-center justify-between">
+                <h2 className="text-lg md:text-2xl font-black text-slate-800 flex items-center gap-2 md:gap-3"><Award className="w-5 h-5 md:w-7 md:h-7 text-yellow-500" /> Standings</h2>
                 <div className="flex items-center gap-3">
                   {isEvent && (
                     <button
                       onClick={() => setHideTotogians(!hideTotogians)}
-                      className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[10px] md:text-xs font-bold transition-all ${
                         hideTotogians
                           ? 'bg-purple-100 text-purple-700 border border-purple-200'
                           : 'bg-slate-100 text-slate-500 border border-transparent hover:border-slate-200'
@@ -1423,15 +1423,76 @@ const App: React.FC = () => {
                   <span className="hidden md:inline text-slate-400 text-xs font-black uppercase tracking-widest italic text-right">Sorted by Pts → Wins → Diff</span>
                 </div>
               </div>
-              <div className="overflow-x-auto overflow-y-hidden no-scrollbar">
-                <table className="w-full text-left border-collapse min-w-[600px]">
+
+              {/* Mobile card layout */}
+              <div className="md:hidden divide-y divide-slate-100">
+                {displayLeaderboard.map((entry, idx) => {
+                  const prizeRank = getPrizeRank(entry.playerId);
+                  const overallIdx = leaderboard.findIndex(e => e.playerId === entry.playerId);
+                  const displayRank = hideTotogians ? idx : overallIdx;
+                  
+                  const getRankStyle = () => {
+                    if (entry.isTotogian) return 'bg-purple-100 text-purple-400';
+                    const rank = isEvent ? prizeRank : displayRank;
+                    if (rank === 0) return 'bg-yellow-400 text-white shadow-lg';
+                    if (rank === 1) return 'bg-slate-200 text-slate-600';
+                    if (rank === 2) return 'bg-orange-300 text-white';
+                    return 'bg-slate-100 text-slate-400';
+                  };
+
+                  const player = tournament?.players.find(p => p.id === entry.playerId);
+                  const skill = player?.skillLevel || 'medium';
+
+                  return (
+                    <div key={entry.playerId} className={`flex items-center gap-3 px-4 py-4 ${entry.isTotogian ? 'opacity-50' : ''}`}>
+                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-sm shrink-0 ${getRankStyle()}`}>
+                        {displayRank + 1}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="font-black text-slate-900 text-sm italic uppercase truncate">{entry.playerName}</span>
+                          {entry.isTotogian && (
+                            <span className="px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase bg-purple-100 text-purple-500 shrink-0">T</span>
+                          )}
+                        </div>
+                        {entry.playerNickname && (
+                          <div className={`${tc.nicknameText} font-semibold text-[10px] truncate`}>"{entry.playerNickname}"</div>
+                        )}
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="font-bold text-[10px]">
+                            <span className="text-emerald-500">{entry.wins}W</span>
+                            <span className="text-slate-300">-</span>
+                            <span className="text-rose-400">{entry.losses}L</span>
+                            <span className="text-slate-300">-</span>
+                            <span className="text-slate-400">{entry.ties}T</span>
+                          </span>
+                          <span className="text-[9px] text-slate-400 font-bold">{entry.avgPoints} avg</span>
+                          {isEvent && (
+                            <span className={`px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase ${SKILL_COLORS[skill].bg} ${SKILL_COLORS[skill].text}`}>
+                              {skill}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className="font-black text-2xl tracking-tighter text-slate-900 italic leading-none">{entry.totalPoints}</span>
+                        <div className="text-[8px] text-slate-400 font-bold uppercase">pts</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Desktop table layout */}
+              <div className="hidden md:block overflow-x-auto overflow-y-hidden no-scrollbar">
+                <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="bg-slate-50/30 text-[8px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                      <th className="px-4 md:px-12 py-4 md:py-8">Rank</th>
-                      <th className="px-4 md:px-12 py-4 md:py-8">Athlete</th>
-                      {isEvent && <th className="px-4 md:px-8 py-4 md:py-8 text-center">Skill</th>}
-                      <th className="px-4 md:px-12 py-4 md:py-8 text-center">Record (W-L-T)</th>
-                      <th className="px-4 md:px-12 py-4 md:py-8 text-right">{isEvent ? tc.primaryText : 'text-indigo-600'} Total Points</th>
+                    <tr className="bg-slate-50/30 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                      <th className="px-12 py-8">Rank</th>
+                      <th className="px-12 py-8">Athlete</th>
+                      {isEvent && <th className="px-8 py-8 text-center">Skill</th>}
+                      <th className="px-12 py-8 text-center">Record (W-L-T)</th>
+                      <th className="px-12 py-8 text-right">Total Points</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
@@ -1451,22 +1512,22 @@ const App: React.FC = () => {
                       
                       return (
                         <tr key={entry.playerId} className={`hover:bg-slate-50/50 transition-colors ${entry.isTotogian ? 'opacity-50' : ''}`}>
-                          <td className="px-4 md:px-12 py-6 md:py-10">
-                            <div className={`w-8 h-8 md:w-12 md:h-12 rounded-xl md:rounded-2xl flex items-center justify-center font-black text-base md:text-xl ${getRankStyle()}`}>
+                          <td className="px-12 py-10">
+                            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-xl ${getRankStyle()}`}>
                               {displayRank + 1}
                             </div>
                           </td>
-                          <td className="px-4 md:px-12 py-6 md:py-10">
+                          <td className="px-12 py-10">
                             <div className="flex items-center gap-2">
-                              <PlayerName name={entry.playerName} nickname={entry.playerNickname} baseClass="font-black text-slate-900 text-lg md:text-2xl italic uppercase" inline />
+                              <PlayerName name={entry.playerName} nickname={entry.playerNickname} baseClass="font-black text-slate-900 text-2xl italic uppercase" inline />
                               {entry.isTotogian && (
                                 <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-purple-100 text-purple-500 whitespace-nowrap">Totogi</span>
                               )}
                             </div>
-                            <div className="text-[8px] md:text-[10px] text-slate-400 font-bold uppercase mt-1">Avg {entry.avgPoints} / Match</div>
+                            <div className="text-[10px] text-slate-400 font-bold uppercase mt-1">Avg {entry.avgPoints} / Match</div>
                           </td>
                           {isEvent && (
-                            <td className="px-4 md:px-8 py-6 md:py-10 text-center">
+                            <td className="px-8 py-10 text-center">
                               {(() => {
                                 const player = tournament?.players.find(p => p.id === entry.playerId);
                                 const skill = player?.skillLevel || 'medium';
@@ -1478,8 +1539,8 @@ const App: React.FC = () => {
                               })()}
                             </td>
                           )}
-                          <td className="px-4 md:px-12 py-6 md:py-10 text-center whitespace-nowrap">
-                            <div className="flex items-center justify-center gap-1 font-black text-xs md:text-base">
+                          <td className="px-12 py-10 text-center whitespace-nowrap">
+                            <div className="flex items-center justify-center gap-1 font-black text-base">
                               <span className="text-emerald-500">{entry.wins}W</span>
                               <span className="text-slate-200">-</span>
                               <span className="text-rose-400">{entry.losses}L</span>
@@ -1487,8 +1548,8 @@ const App: React.FC = () => {
                               <span className="text-slate-400">{entry.ties}T</span>
                             </div>
                           </td>
-                          <td className="px-4 md:px-12 py-6 md:py-10 text-right">
-                            <span className="font-black text-3xl md:text-6xl tracking-tighter text-slate-900 italic leading-none">{entry.totalPoints}</span>
+                          <td className="px-12 py-10 text-right">
+                            <span className="font-black text-6xl tracking-tighter text-slate-900 italic leading-none">{entry.totalPoints}</span>
                           </td>
                         </tr>
                       );
