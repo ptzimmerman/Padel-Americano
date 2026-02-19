@@ -20,14 +20,15 @@ export const onRequest: PagesFunction = async (context) => {
 
   let html = await response.text();
 
-  // Always make OG image URLs absolute
-  html = html.replace(/content="\/og-image\.png"/g, `content="${origin}/og-image.png"`);
-
+  // Totogi rewrites first (before generic absolute URL pass)
   if (isTotogi) {
     for (const [pattern, replacement] of TOTOGI_REPLACEMENTS) {
       html = html.replace(pattern, replacement.replace('__ORIGIN__', origin));
     }
   }
+
+  // Make any remaining relative OG image paths absolute
+  html = html.replace(/content="\/og-image\.png"/g, `content="${origin}/og-image.png"`);
 
   return new Response(html, {
     status: response.status,
