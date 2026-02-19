@@ -1,5 +1,5 @@
-import type { Env, SharedTournament, ErrorResponse } from '../../types';
-import { hashPin, TTL_SECONDS } from '../../types';
+import type { Env, SharedTournament, ErrorResponse } from '../../../types';
+import { hashPin, TTL_SECONDS } from '../../../types';
 
 // GET /api/game/:id - Get tournament data (public, no PIN required)
 export const onRequestGet: PagesFunction<Env> = async (context) => {

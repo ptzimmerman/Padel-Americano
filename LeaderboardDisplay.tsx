@@ -113,9 +113,9 @@ const LeaderboardDisplay: React.FC = () => {
             <img src="/totogi-padel-logo.png" alt="Totogi" className="w-12 h-12 rounded-xl" />
             <div>
               <h1 className="text-xl font-black text-white tracking-tight italic">
-                PADEL<span className="text-purple-400"> INVITATIONAL</span>
+                <span className="text-purple-400">TOTOGI</span> PADEL
               </h1>
-              <p className="text-purple-500 text-[10px] font-bold uppercase tracking-wider">Live Leaderboard</p>
+              <p className="text-purple-500 text-[10px] font-bold uppercase tracking-wider">Invitational — Live Leaderboard</p>
             </div>
           </div>
           <div className="flex items-center gap-4">

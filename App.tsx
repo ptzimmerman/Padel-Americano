@@ -673,10 +673,10 @@ const App: React.FC = () => {
                 <img src="/totogi-padel-logo.png" alt="Totogi Padel" className="w-12 h-12 md:w-14 md:h-14 rounded-xl" />
                 <div>
                   <h1 className="text-2xl md:text-3xl font-[900] text-slate-900 tracking-tight italic">
-                    PADEL<span className="text-purple-600"> INVITATIONAL</span>
+                    <span className="text-purple-600">TOTOGI</span> PADEL
                   </h1>
-                  <p className="text-purple-500 font-bold uppercase text-[9px] md:text-[10px] tracking-[0.2em] md:tracking-[0.3em] pl-0.5 flex items-center gap-1.5">
-                    <img src="/totogi-logo.png" alt="totogi" className="h-3 md:h-3.5 opacity-80" /> Social Mixer
+                  <p className="text-purple-500 font-bold uppercase text-[9px] md:text-[10px] tracking-[0.2em] md:tracking-[0.3em] pl-0.5">
+                    INVITATIONAL
                   </p>
                 </div>
               </div>
@@ -1230,8 +1230,8 @@ const App: React.FC = () => {
 
         {activeTab === 'leaderboard' && (
           <div className="animate-in fade-in slide-in-from-bottom-4 space-y-6">
-            {/* Final Standings - shows after championship is complete */}
-            {(() => {
+            {/* Final Standings - shows after championship is complete (classic mode only) */}
+            {tournament?.mode !== 'event' && (() => {
               const championshipRound = tournament?.rounds.find(r => 
                 r.matches.some(m => m.id.includes('championship'))
               );
@@ -1308,8 +1308,8 @@ const App: React.FC = () => {
               );
             })()}
             
-            {/* Championship Round Button */}
-            {leaderboard.length >= 4 && !tournament?.rounds.some(r => r.matches.some(m => m.id.includes('championship'))) && (
+            {/* Championship Round Button - classic mode only */}
+            {tournament?.mode !== 'event' && leaderboard.length >= 4 && !tournament?.rounds.some(r => r.matches.some(m => m.id.includes('championship'))) && (
               <div className="bg-gradient-to-r from-yellow-50 to-amber-50 rounded-3xl md:rounded-[3rem] p-6 md:p-8 border border-yellow-200 flex flex-col md:flex-row items-center justify-between gap-4">
                 <div className="text-center md:text-left">
                   <h3 className="text-lg md:text-xl font-black text-slate-800 flex items-center gap-2 justify-center md:justify-start">
