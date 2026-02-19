@@ -1,4 +1,14 @@
-// Rewrite og:image relative paths to absolute URLs so link previews work on any domain
+const TOTOGI_REPLACEMENTS: [RegExp, string][] = [
+  [/<title>.*?<\/title>/, '<title>Totogi Padel Invitational</title>'],
+  [/content="Padel Americano — Tournament Manager"/g, 'content="Totogi Padel Invitational"'],
+  [/content="Padel Americano"/g, 'content="Totogi Padel Invitational"'],
+  [/content="Generate round-robin Padel Americano schedules, track scores, and view live leaderboards\."/g,
+    'content="Skill-balanced matchmaking, live scoring, and real-time leaderboards. MWC Barcelona 2026."'],
+  [/content="\/og-image\.png"/g, 'content="__ORIGIN__/totogi-og-image.png"'],
+  [/content="\/favicon\.png"/g, 'content="/totogi-padel-logo.png"'],
+  [/href="\/favicon\.png"/g, 'href="/totogi-padel-logo.png"'],
+];
+
 export const onRequest: PagesFunction = async (context) => {
   const response = await context.next();
   const contentType = response.headers.get('content-type') || '';
@@ -6,14 +16,20 @@ export const onRequest: PagesFunction = async (context) => {
 
   const url = new URL(context.request.url);
   const origin = url.origin;
-  const html = await response.text();
+  const isTotogi = url.hostname.includes('totogi');
 
-  const rewritten = html.replace(
-    /content="\/totogi-og-image\.png"/g,
-    `content="${origin}/totogi-og-image.png"`
-  );
+  let html = await response.text();
 
-  return new Response(rewritten, {
+  // Always make OG image URLs absolute
+  html = html.replace(/content="\/og-image\.png"/g, `content="${origin}/og-image.png"`);
+
+  if (isTotogi) {
+    for (const [pattern, replacement] of TOTOGI_REPLACEMENTS) {
+      html = html.replace(pattern, replacement.replace('__ORIGIN__', origin));
+    }
+  }
+
+  return new Response(html, {
     status: response.status,
     headers: response.headers,
   });

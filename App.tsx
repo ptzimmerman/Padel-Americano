@@ -55,8 +55,9 @@ const App: React.FC = () => {
   const [currentRoundIndex, setCurrentRoundIndex] = useState(0);
   const [courtNames, setCourtNames] = useState<string[]>([]);
   
-  // Event mode
-  const [eventMode, setEventMode] = useState(false);
+  // Event mode — default to event on totogi subdomain
+  const isTotogiHost = typeof window !== 'undefined' && window.location.hostname.includes('totogi');
+  const [eventMode, setEventMode] = useState(isTotogiHost);
   const [eventNumCourts, setEventNumCourts] = useState(4);
   
   const tournamentRef = useRef(tournament);
