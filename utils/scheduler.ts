@@ -469,6 +469,193 @@ export const generateAdditionalRound = (
 };
 
 /**
+ * Generate a skill-balanced event round.
+ * Used in "event mode" where rounds are generated one at a time
+ * from the current active player pool.
+ * 
+ * Skill balancing: each match targets equal team skill sums.
+ * low=1, medium=2, high=3 → ideal match has equal team sums (e.g. 4v4).
+ */
+export const generateEventRound = (
+  activePlayers: Player[],
+  allPlayers: Player[],
+  existingRounds: Round[],
+  roundIndex: number,
+  numCourts: number
+): Round => {
+  const playersPerRound = numCourts * 4;
+  
+  const partnerHistory: Record<string, Set<string>> = {};
+  const opponentHistory: Record<string, Set<string>> = {};
+  const matchCount: Record<string, number> = {};
+  const courtHistory: Map<string, number[]> = new Map();
+  
+  allPlayers.forEach(p => {
+    partnerHistory[p.id] = new Set();
+    opponentHistory[p.id] = new Set();
+    matchCount[p.id] = 0;
+    courtHistory.set(p.id, []);
+  });
+  
+  existingRounds.forEach(round => {
+    round.matches.forEach(match => {
+      [...match.teamA, ...match.teamB].forEach(id => {
+        matchCount[id] = (matchCount[id] || 0) + 1;
+        const hist = courtHistory.get(id) || [];
+        hist.push(match.courtIndex);
+        courtHistory.set(id, hist);
+      });
+      
+      partnerHistory[match.teamA[0]]?.add(match.teamA[1]);
+      partnerHistory[match.teamA[1]]?.add(match.teamA[0]);
+      partnerHistory[match.teamB[0]]?.add(match.teamB[1]);
+      partnerHistory[match.teamB[1]]?.add(match.teamB[0]);
+      
+      match.teamA.forEach(a => match.teamB.forEach(b => {
+        opponentHistory[a]?.add(b);
+        opponentHistory[b]?.add(a);
+      }));
+    });
+  });
+  
+  // Sort by fewest matches played first, then randomize within same count
+  const sorted = [...activePlayers].sort((a, b) => {
+    const diff = (matchCount[a.id] || 0) - (matchCount[b.id] || 0);
+    if (diff !== 0) return diff;
+    return Math.random() - 0.5;
+  });
+  
+  const selected = sorted.slice(0, playersPerRound);
+  const byes = sorted.slice(playersPerRound).map(p => p.id);
+  
+  const skillValue = (p: Player): number => {
+    if (p.skillLevel === 'high') return 3;
+    if (p.skillLevel === 'low') return 1;
+    return 2;
+  };
+  
+  // Group by skill for balanced distribution
+  const highs = selected.filter(p => skillValue(p) === 3);
+  const meds = selected.filter(p => skillValue(p) === 2);
+  const lows = selected.filter(p => skillValue(p) === 1);
+  
+  // Build groups of 4 players, each as balanced as possible
+  // Strategy: pair high+low, medium+medium when possible
+  const groups: Player[][] = [];
+  const used = new Set<string>();
+  
+  // First pass: create balanced groups of 4
+  // Try to pair: [high, low, high, low] or [high, low, med, med] or [med, med, med, med]
+  const available = () => ({
+    h: highs.filter(p => !used.has(p.id)),
+    m: meds.filter(p => !used.has(p.id)),
+    l: lows.filter(p => !used.has(p.id)),
+  });
+  
+  for (let court = 0; court < numCourts; court++) {
+    const { h, m, l } = available();
+    const group: Player[] = [];
+    
+    if (h.length >= 2 && l.length >= 2) {
+      group.push(h[0], h[1], l[0], l[1]);
+    } else if (h.length >= 1 && l.length >= 1 && m.length >= 2) {
+      group.push(h[0], l[0], m[0], m[1]);
+    } else if (h.length >= 2 && m.length >= 2) {
+      group.push(h[0], m[0], h[1], m[1]);
+    } else if (m.length >= 4) {
+      group.push(m[0], m[1], m[2], m[3]);
+    } else if (h.length >= 1 && l.length >= 1 && m.length >= 1) {
+      // 3 available from different pools, grab one more from anywhere
+      const remaining = [...h.slice(1), ...m.slice(1), ...l.slice(1)];
+      group.push(h[0], l[0], m[0]);
+      if (remaining.length > 0) group.push(remaining[0]);
+    } else {
+      // Fallback: just grab whoever is available
+      const all = [...h, ...m, ...l];
+      for (let i = 0; i < Math.min(4, all.length); i++) {
+        group.push(all[i]);
+      }
+    }
+    
+    if (group.length === 4) {
+      group.forEach(p => used.add(p.id));
+      groups.push(group);
+    } else {
+      break;
+    }
+  }
+  
+  // Now create matches from groups, pairing teammates to balance skill and avoid repeats
+  const matches: Match[] = [];
+  
+  for (let i = 0; i < groups.length; i++) {
+    const group = groups[i];
+    if (group.length !== 4) continue;
+    
+    // Try all 3 possible team splits and pick the best one
+    const splits: [number, number, number, number][] = [
+      [0, 1, 2, 3], // 0+1 vs 2+3
+      [0, 2, 1, 3], // 0+2 vs 1+3
+      [0, 3, 1, 2], // 0+3 vs 1+2
+    ];
+    
+    let bestSplit = splits[0];
+    let bestScore = Infinity;
+    
+    for (const split of splits) {
+      const teamASkill = skillValue(group[split[0]]) + skillValue(group[split[1]]);
+      const teamBSkill = skillValue(group[split[2]]) + skillValue(group[split[3]]);
+      const skillDiff = Math.abs(teamASkill - teamBSkill);
+      
+      // Penalty for previous partners
+      let partnerPenalty = 0;
+      if (partnerHistory[group[split[0]].id]?.has(group[split[1]].id)) partnerPenalty += 10;
+      if (partnerHistory[group[split[2]].id]?.has(group[split[3]].id)) partnerPenalty += 10;
+      
+      // Penalty for previous opponents
+      let opponentPenalty = 0;
+      [group[split[0]].id, group[split[1]].id].forEach(a => {
+        [group[split[2]].id, group[split[3]].id].forEach(b => {
+          if (opponentHistory[a]?.has(b)) opponentPenalty += 2;
+        });
+      });
+      
+      const score = skillDiff * 5 + partnerPenalty + opponentPenalty;
+      if (score < bestScore) {
+        bestScore = score;
+        bestSplit = split;
+      }
+    }
+    
+    matches.push({
+      id: `r${roundIndex}-c${i}`,
+      roundIndex,
+      courtIndex: i,
+      teamA: [group[bestSplit[0]].id, group[bestSplit[1]].id],
+      teamB: [group[bestSplit[2]].id, group[bestSplit[3]].id],
+      scoreA: null,
+      scoreB: null,
+      isCompleted: false
+    });
+  }
+  
+  // Players in matches vs all active — anyone not in a match is resting
+  const playersInMatches = new Set<string>();
+  matches.forEach(m => [...m.teamA, ...m.teamB].forEach(id => playersInMatches.add(id)));
+  const allByes = activePlayers
+    .filter(p => !playersInMatches.has(p.id))
+    .map(p => p.id);
+  
+  const optimizedMatches = optimizeCourtAssignments(matches, courtHistory);
+  
+  return {
+    index: roundIndex,
+    matches: optimizedMatches,
+    byes: allByes
+  };
+};
+
+/**
  * Generate a championship round.
  * 1st + 3rd place vs 2nd + 4th place on Court 1
  * Remaining players fill other courts with balanced matchups.

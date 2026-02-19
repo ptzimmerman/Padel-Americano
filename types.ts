@@ -3,6 +3,9 @@ export interface Player {
   id: string;
   name: string;
   nickname?: string;
+  isTotogian?: boolean;
+  skillLevel?: 'low' | 'medium' | 'high';
+  isActive?: boolean;
 }
 
 export interface Match {
@@ -28,18 +31,21 @@ export interface Tournament {
   players: Player[];
   rounds: Round[];
   isStarted: boolean;
-  courtNames?: string[]; // Custom court names (e.g., "Court A", "Center Court", etc.)
+  courtNames?: string[];
+  mode?: 'classic' | 'event';
+  numCourts?: number;
 }
 
 export interface LeaderboardEntry {
   playerId: string;
   playerName: string;
   playerNickname?: string;
+  isTotogian?: boolean;
   totalPoints: number;
   matchesPlayed: number;
   avgPoints: number;
   wins: number;
   losses: number;
   ties: number;
-  pointDifferential: number; // Total points scored minus points conceded
+  pointDifferential: number;
 }

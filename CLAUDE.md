@@ -4,67 +4,116 @@
 
 **Padel Americano Manager** - A React/TypeScript web app for managing Padel Americano tournaments. Americano is a social format where players rotate partners each round, ensuring everyone plays with and against different people.
 
+**Live at**: https://padelme.io  
+**Event subdomain**: totogi.padelme.io (Totogi Padel Invitational)
+
 ## Tech Stack
 
 - **Framework**: React 19 with TypeScript
 - **Build**: Vite 6
 - **Styling**: Tailwind CSS (via CDN in index.html)
 - **Icons**: Lucide React
-- **Deployment**: Vercel (preview links auto-generated on PR)
+- **Routing**: React Router DOM
+- **Deployment**: Cloudflare Pages
+- **Backend**: Cloudflare Pages Functions (serverless)
+- **Storage**: Cloudflare Workers KV (24hr TTL, shared tournaments)
+- **AI**: Anthropic Claude Haiku (nickname generation via `/api/nicknames`)
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `App.tsx` | Main React component - UI, state management, scoring |
+| `App.tsx` | Main React component - UI, state management, scoring, event mode |
 | `types.ts` | TypeScript interfaces (Player, Match, Round, Tournament, LeaderboardEntry) |
-| `utils/scheduler.ts` | **Core logic** - tournament schedules, additional rounds, championship |
-| `index.tsx` | React entry point |
-| `index.html` | HTML shell with Tailwind CDN |
+| `utils/scheduler.ts` | **Core logic** - tournament schedules, skill-balanced event rounds, championship |
+| `KioskView.tsx` | Tablet-friendly player check-in/out for event mode |
+| `LeaderboardDisplay.tsx` | Standalone auto-refreshing leaderboard display |
+| `GameViewer.tsx` | Read-only tournament viewer (polling) |
+| `index.tsx` | React entry point + routing |
+| `index.html` | HTML shell with Tailwind CDN, OG meta tags |
+| `functions/api/game.ts` | POST - create shared tournament |
+| `functions/api/game/[id].ts` | GET/PUT/DELETE - shared tournament CRUD |
+| `functions/api/game/[id]/players.ts` | PATCH - kiosk player toggle/add (no PIN) |
+| `functions/api/nicknames.ts` | POST - AI nickname generation |
+| `functions/types.ts` | Shared API types, PIN hashing, ID generation |
 
 ## Architecture
 
+### Two Tournament Modes
+
+**Classic Mode** (default):
+- All rounds pre-generated using Whist tournament logic
+- Player roster locked after tournament starts
+- Perfect schedules for 8, 12, 16 players
+
+**Event Mode** (Totogi Padel Invitational):
+- Rounds generated one-at-a-time with skill-balanced matchmaking
+- Players can be added/removed between rounds
+- `isTotogian` flag for sponsor players (grayed out, not eligible for prizes)
+- `skillLevel` (low/medium/high) drives team balancing
+- `isActive` toggle for round-by-round player pool management
+- Dedicated kiosk and leaderboard display views
+
 ### Scheduling Logic (`utils/scheduler.ts`)
 
-The scheduler implements "Whist Tournament" logic:
-1. **Perfect schedules** for 8, 12, 16 players (hardcoded, mathematically optimal)
-2. **Fallback** Berger Table rotation for other player counts
-
 **Key Functions**:
-- `generateAmericanoSchedule()` - Creates initial tournament rounds
-- `generateAdditionalRound()` - Adds fair rounds on-demand (prioritizes players with fewer matches)
+- `generateAmericanoSchedule()` - Creates all rounds for classic mode
+- `generateEventRound()` - Skill-balanced single round from active pool
+- `generateAdditionalRound()` - Adds fair rounds on-demand
 - `generateChampionshipRound()` - Creates finals: 1st+3rd vs 2nd+4th
 
-**Court Rotation**: The `optimizeCourtAssignments()` function ensures players rotate courts:
-- Tracks player court history across rounds
-- Uses round parity to force alternation when statistics tie
-- Courts display in fixed order in UI (sorted by courtIndex)
+**Skill Matching** (`generateEventRound`):
+- low=1, medium=2, high=3
+- Groups of 4 selected to balance total skill per match
+- Team splits evaluated for skill equality + partnership/opponent history
+- Avoids repeat partnerships and opponents
+
+**Court Rotation**: `optimizeCourtAssignments()` ensures court variety.
+
+### Routes
+
+| Path | Component | Purpose |
+|------|-----------|---------|
+| `/` | App | Main tournament manager |
+| `/game/:id` | GameViewer | Read-only viewer (polling) |
+| `/kiosk/:id` | KioskView | Player self-service check-in |
+| `/display/:id` | LeaderboardDisplay | Live leaderboard display |
 
 ### State Management
 
-All state lives in `App.tsx` using React hooks:
-- `players` - Array of registered players
-- `tournament` - Active tournament data (rounds, scores, court names)
-- `courtNames` - Custom court labels
-- `currentRoundIndex` - Currently viewed round
+All state lives in `App.tsx` using React hooks.
 
-**Persistence** (localStorage keys):
+**localStorage keys**:
 - `padel_players` - Player list
 - `padel_tournament` - Full tournament state
-- `padel_court_names` - Court names (before tournament starts)
+- `padel_court_names` - Court names
+- `padel_share_state` - Sharing state (id, pin, url)
+- `padel_event_mode` - Event mode flag
+- `padel_event_courts` - Event court count
+
+### Cloud Sharing
+
+- Organizer creates shared tournament → POST `/api/game`
+- Auto-syncs on every change → PUT `/api/game/:id` (debounced 500ms)
+- Kiosk updates player status → PATCH `/api/game/:id/players` (no PIN)
+- Viewers poll → GET `/api/game/:id` every 5s
+- 24-hour TTL auto-cleanup
 
 ### Scoring & Leaderboard
 
-Points accumulate per-player across all rounds. Tiebreaker order:
-1. Total points (higher better)
-2. Match wins (higher better)
-3. Point differential (points scored - points conceded)
+Tiebreaker order: Total Points → Match Wins → Point Differential
 
-### Championship System
+**Event Mode Leaderboard**:
+- Totogian players shown with reduced opacity
+- Filter toggle: "All Players" vs "Prize View" (hides Totogians)
+- Gold/silver/bronze medals skip Totogian players
 
-- Championship match ID contains "championship" string (used for detection)
-- Finals: 1st+3rd place team vs 2nd+4th place team
-- Results show: Team champions, runner-up, and individual 1-4 rankings by total points
+### Branding (Event Mode)
+
+- Purple theme (`bg-purple-600`, `bg-purple-950`)
+- `public/totogi-padel-logo.png` - Padel Invitational badge
+- `public/totogi-logo.png` - Totogi wordmark
+- Header: "PADEL INVITATIONAL" + "Social Mixer"
 
 ## Commands
 
@@ -77,22 +126,13 @@ npm run preview # Preview production build
 
 ## Conventions
 
-- Player counts of 8, 12, 16 are "perfect" and show a special badge
-- Odd player counts get "bye" rounds where someone sits out
-- Courts auto-number but can be renamed (Tab between inputs)
-- Setup is locked once tournament starts (overlay + disabled inputs)
-- "+" button to add rounds only appears on the last round
-- Keyboard: Arrow keys navigate rounds (when not in input)
-
-## Known Quirks
-
-- The hardcoded schedules in `SCHEDULE_8` and `SCHEDULE_16` are verified optimal and should not be modified
-- Court optimization uses brute-force permutation (fine for ≤4 courts)
 - Championship detection uses `match.id.includes('championship')`
-- PIN is stored internally for cloud sync but not displayed to users
+- Event mode detected via `tournament.mode === 'event'`
+- Kiosk/display views communicate only through KV (no localStorage)
+- PIN stored internally for cloud sync but not displayed to users
+- Hardcoded schedules in `SCHEDULE_8` and `SCHEDULE_16` are verified optimal
 
-## Future Enhancements
+## Environment Variables (Cloudflare Pages)
 
-- [ ] Multiple tournament history
-- [ ] Print-friendly bracket view
-- [ ] Player profiles with persistent stats (Groups & Auth spec exists)
+- `ANTHROPIC_API_KEY` - For AI nickname generation (set in both Production and Preview)
+- KV Namespace binding: `TOURNAMENTS`
