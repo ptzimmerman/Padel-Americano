@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Player, Tournament, Round, LeaderboardEntry, Match } from './types.ts';
 import { generateAmericanoSchedule, generateAdditionalRound, generateChampionshipRound, generateEventRound } from './utils/scheduler.ts';
 import { 
@@ -58,6 +58,9 @@ const App: React.FC = () => {
   // Event mode
   const [eventMode, setEventMode] = useState(false);
   const [eventNumCourts, setEventNumCourts] = useState(4);
+  
+  const tournamentRef = useRef(tournament);
+  tournamentRef.current = tournament;
   
   // Leaderboard filter
   const [hideTotogians, setHideTotogians] = useState(false);
@@ -199,13 +202,36 @@ const App: React.FC = () => {
     const syncToCloud = async () => {
       setShareState(prev => ({ ...prev, isSyncing: true }));
       try {
+        let tournamentToSync = tournament;
+
+        // In event mode, merge kiosk player changes before writing to avoid overwriting them
+        if (tournament.mode === 'event') {
+          try {
+            const getResp = await fetch(`/api/game/${shareState.shareId}`);
+            if (getResp.ok) {
+              const kvData = await getResp.json();
+              const kvPlayers: Player[] = kvData.tournament?.players || [];
+              const localIds = new Set(tournament.players.map(p => p.id));
+              const kioskAdded = kvPlayers.filter(p => !localIds.has(p.id));
+              if (kioskAdded.length > 0) {
+                const mergedPlayers = [...tournament.players, ...kioskAdded];
+                tournamentToSync = { ...tournament, players: mergedPlayers };
+                setPlayers(mergedPlayers);
+                setTournament(prev => prev ? { ...prev, players: mergedPlayers } : prev);
+              }
+            }
+          } catch {
+            // Proceed with local state if merge-read fails
+          }
+        }
+
         const response = await fetch(`/api/game/${shareState.shareId}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
             'X-Tournament-Pin': shareState.pin,
           },
-          body: JSON.stringify({ tournament }),
+          body: JSON.stringify({ tournament: tournamentToSync }),
         });
         
         if (response.ok) {
@@ -223,6 +249,55 @@ const App: React.FC = () => {
     const timer = setTimeout(syncToCloud, 500);
     return () => clearTimeout(timer);
   }, [tournament, shareState.isSharing, shareState.shareId, shareState.pin]);
+
+  // Poll KV for kiosk player changes (event mode only)
+  useEffect(() => {
+    if (!shareState.isSharing || !shareState.shareId || !tournament || tournament.mode !== 'event') return;
+    
+    const pollForPlayerChanges = async () => {
+      const current = tournamentRef.current;
+      if (!current) return;
+      try {
+        const response = await fetch(`/api/game/${shareState.shareId}`);
+        if (!response.ok) return;
+        const data = await response.json();
+        const remotePlayers: Player[] = data.tournament?.players || [];
+        if (remotePlayers.length === 0) return;
+        
+        const localIds = new Set(current.players.map(p => p.id));
+        const localById = new Map(current.players.map(p => [p.id, p]));
+        
+        let needsUpdate = false;
+        const mergedPlayers = [...current.players];
+        
+        for (const rp of remotePlayers) {
+          if (!localIds.has(rp.id)) {
+            mergedPlayers.push(rp);
+            needsUpdate = true;
+          }
+        }
+        
+        const remoteById = new Map(remotePlayers.map(p => [p.id, p]));
+        for (let i = 0; i < mergedPlayers.length; i++) {
+          const remote = remoteById.get(mergedPlayers[i].id);
+          if (remote && remote.isActive !== mergedPlayers[i].isActive) {
+            mergedPlayers[i] = { ...mergedPlayers[i], isActive: remote.isActive };
+            needsUpdate = true;
+          }
+        }
+        
+        if (needsUpdate) {
+          setPlayers(mergedPlayers);
+          setTournament(prev => prev ? { ...prev, players: mergedPlayers } : prev);
+        }
+      } catch {
+        // Silent fail — polling is best-effort
+      }
+    };
+
+    const interval = setInterval(pollForPlayerChanges, 4000);
+    return () => clearInterval(interval);
+  }, [shareState.isSharing, shareState.shareId, tournament?.mode]);
 
   const startSharing = async () => {
     if (!tournament) return;
