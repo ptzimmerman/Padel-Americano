@@ -11,6 +11,7 @@ interface PlayerPatchBody {
   player?: {
     id: string;
     name: string;
+    nickname?: string;
     skillLevel?: 'low' | 'medium' | 'high';
     isTotogian?: boolean;
     isActive?: boolean;
@@ -48,6 +49,7 @@ export const onRequestPatch: PagesFunction<Env> = async (context) => {
       sharedTournament.tournament.players.push({
         id: body.player.id,
         name: body.player.name,
+        nickname: body.player.nickname,
         skillLevel: body.player.skillLevel,
         isTotogian: body.player.isTotogian,
         isActive: body.player.isActive ?? true,

@@ -10,7 +10,8 @@ import {
   Check,
   Users,
   Zap,
-  Trophy
+  Trophy,
+  Sparkles
 } from 'lucide-react';
 
 const SKILL_COLORS = {
@@ -33,6 +34,7 @@ const KioskView: React.FC = () => {
   const [newName, setNewName] = useState('');
   const [newSkill, setNewSkill] = useState<'low' | 'medium' | 'high'>('medium');
   const [newTotogian, setNewTotogian] = useState(false);
+  const [wantNickname, setWantNickname] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
 
   const fetchTournament = async () => {
@@ -92,6 +94,23 @@ const KioskView: React.FC = () => {
     setIsAdding(true);
     
     try {
+      let nickname: string | undefined;
+      if (wantNickname) {
+        try {
+          const nicknameResp = await fetch('/api/nicknames', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ names: [newName.trim()] }),
+          });
+          if (nicknameResp.ok) {
+            const nicknameData = await nicknameResp.json();
+            nickname = nicknameData.nicknames?.[newName.trim()];
+          }
+        } catch {
+          // Proceed without nickname if generation fails
+        }
+      }
+
       const response = await fetch(`/api/game/${id}/players`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -100,6 +119,7 @@ const KioskView: React.FC = () => {
           player: {
             id: crypto.randomUUID(),
             name: newName.trim(),
+            nickname,
             skillLevel: newSkill,
             isTotogian: newTotogian,
             isActive: true,
@@ -225,6 +245,14 @@ const KioskView: React.FC = () => {
                 <input type="checkbox" checked={newTotogian} onChange={(e) => setNewTotogian(e.target.checked)} className="sr-only" />
                 <span className="text-xs font-bold text-purple-400">Totogian</span>
               </label>
+              <div className="w-px h-6 bg-purple-700 mx-1" />
+              <label className="flex items-center gap-2 cursor-pointer">
+                <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${wantNickname ? 'bg-amber-500 border-amber-500' : 'border-purple-600'}`}>
+                  {wantNickname && <Sparkles className="w-3 h-3 text-white" strokeWidth={3} />}
+                </div>
+                <input type="checkbox" checked={wantNickname} onChange={(e) => setWantNickname(e.target.checked)} className="sr-only" />
+                <span className="text-xs font-bold text-purple-400">AI Nickname</span>
+              </label>
             </div>
             <div className="flex gap-2">
               <button
@@ -233,7 +261,7 @@ const KioskView: React.FC = () => {
                 className="flex-1 bg-purple-600 hover:bg-purple-500 disabled:bg-purple-800 text-white py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-2"
               >
                 {isAdding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                Add to Tournament
+                {isAdding && wantNickname ? 'Generating nickname...' : 'Add to Tournament'}
               </button>
               <button
                 onClick={() => setShowAddForm(false)}
@@ -271,6 +299,9 @@ const KioskView: React.FC = () => {
                 <UserMinus className="w-4 h-4 text-purple-600 group-hover:text-rose-400 transition-colors" />
               </div>
               <div className="font-black text-white text-base truncate">{player.name}</div>
+              {player.nickname && (
+                <div className="text-purple-400 font-semibold text-xs truncate mt-0.5">"{player.nickname}"</div>
+              )}
               <div className="flex items-center gap-2 mt-1.5">
                 {player.skillLevel && (
                   <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${SKILL_COLORS[player.skillLevel].bg} ${SKILL_COLORS[player.skillLevel].text}`}>
@@ -312,6 +343,9 @@ const KioskView: React.FC = () => {
                     <UserPlus className="w-4 h-4 text-purple-800 hover:text-emerald-400 transition-colors" />
                   </div>
                   <div className="font-black text-purple-400 text-base truncate">{player.name}</div>
+                  {player.nickname && (
+                    <div className="text-purple-600 font-semibold text-xs truncate mt-0.5">"{player.nickname}"</div>
+                  )}
                   <div className="flex items-center gap-2 mt-1.5">
                     {player.skillLevel && (
                       <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase opacity-60 ${SKILL_COLORS[player.skillLevel].bg} ${SKILL_COLORS[player.skillLevel].text}`}>
