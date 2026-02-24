@@ -212,10 +212,29 @@ const App: React.FC = () => {
             if (getResp.ok) {
               const kvData = await getResp.json();
               const kvPlayers: Player[] = kvData.tournament?.players || [];
+              const kvById = new Map(kvPlayers.map(p => [p.id, p]));
               const localIds = new Set(tournament.players.map(p => p.id));
+              
+              let needsUpdate = false;
+              
+              // Merge isActive changes from KV for existing players
+              let mergedPlayers = tournament.players.map(p => {
+                const kvp = kvById.get(p.id);
+                if (kvp && kvp.isActive !== p.isActive) {
+                  needsUpdate = true;
+                  return { ...p, isActive: kvp.isActive };
+                }
+                return p;
+              });
+              
+              // Add new players from kiosk
               const kioskAdded = kvPlayers.filter(p => !localIds.has(p.id));
               if (kioskAdded.length > 0) {
-                const mergedPlayers = [...tournament.players, ...kioskAdded];
+                mergedPlayers = [...mergedPlayers, ...kioskAdded];
+                needsUpdate = true;
+              }
+              
+              if (needsUpdate) {
                 tournamentToSync = { ...tournament, players: mergedPlayers };
                 setPlayers(mergedPlayers);
                 setTournament(prev => prev ? { ...prev, players: mergedPlayers } : prev);
@@ -413,6 +432,14 @@ const App: React.FC = () => {
           p.id === id ? { ...p, isActive: !p.isActive } : p
         ),
       } : prev);
+    }
+    // Also update KV directly so kiosk stays in sync
+    if (shareState.isSharing && shareState.shareId) {
+      fetch(`/api/game/${shareState.shareId}/players`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId: id, action: 'toggle' }),
+      }).catch(() => {});
     }
   };
 

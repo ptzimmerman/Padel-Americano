@@ -469,12 +469,27 @@ export const generateAdditionalRound = (
 };
 
 /**
+ * Fisher-Yates shuffle — proper uniform randomization.
+ */
+const shuffle = <T>(arr: T[]): T[] => {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+};
+
+/**
  * Generate a skill-balanced event round.
  * Used in "event mode" where rounds are generated one at a time
  * from the current active player pool.
  * 
- * Skill balancing: each match targets equal team skill sums.
- * low=1, medium=2, high=3 → ideal match has equal team sums (e.g. 4v4).
+ * Uses a multi-attempt randomized approach:
+ * 1. Properly shuffle players (Fisher-Yates) within same match count
+ * 2. Try many candidate groupings scored on skill balance + partner/opponent novelty
+ * 3. Pick the best candidate
+ * 4. Court rotation via optimizeCourtAssignments
  */
 export const generateEventRound = (
   activePlayers: Player[],
@@ -489,22 +504,35 @@ export const generateEventRound = (
   const opponentHistory: Record<string, Set<string>> = {};
   const matchCount: Record<string, number> = {};
   const courtHistory: Map<string, number[]> = new Map();
+  // Track how many times each pair of players has been in the same group
+  const groupHistory: Record<string, Record<string, number>> = {};
   
   allPlayers.forEach(p => {
     partnerHistory[p.id] = new Set();
     opponentHistory[p.id] = new Set();
     matchCount[p.id] = 0;
     courtHistory.set(p.id, []);
+    groupHistory[p.id] = {};
   });
   
   existingRounds.forEach(round => {
     round.matches.forEach(match => {
-      [...match.teamA, ...match.teamB].forEach(id => {
+      const allInMatch = [...match.teamA, ...match.teamB];
+      allInMatch.forEach(id => {
         matchCount[id] = (matchCount[id] || 0) + 1;
         const hist = courtHistory.get(id) || [];
         hist.push(match.courtIndex);
         courtHistory.set(id, hist);
       });
+      
+      // Track every pair that was in the same match (group history)
+      for (let a = 0; a < allInMatch.length; a++) {
+        for (let b = a + 1; b < allInMatch.length; b++) {
+          const idA = allInMatch[a], idB = allInMatch[b];
+          if (groupHistory[idA]) groupHistory[idA][idB] = (groupHistory[idA][idB] || 0) + 1;
+          if (groupHistory[idB]) groupHistory[idB][idA] = (groupHistory[idB][idA] || 0) + 1;
+        }
+      }
       
       partnerHistory[match.teamA[0]]?.add(match.teamA[1]);
       partnerHistory[match.teamA[1]]?.add(match.teamA[0]);
@@ -518,101 +546,158 @@ export const generateEventRound = (
     });
   });
   
-  // Sort by fewest matches played first, then randomize within same count
-  const sorted = [...activePlayers].sort((a, b) => {
-    const diff = (matchCount[a.id] || 0) - (matchCount[b.id] || 0);
-    if (diff !== 0) return diff;
-    return Math.random() - 0.5;
-  });
-  
-  const selected = sorted.slice(0, playersPerRound);
-  const byes = sorted.slice(playersPerRound).map(p => p.id);
-  
   const skillValue = (p: Player): number => {
     if (p.skillLevel === 'high') return 3;
     if (p.skillLevel === 'low') return 1;
     return 2;
   };
-  
-  // Group by skill for balanced distribution
-  const highs = selected.filter(p => skillValue(p) === 3);
-  const meds = selected.filter(p => skillValue(p) === 2);
-  const lows = selected.filter(p => skillValue(p) === 1);
-  
-  // Build groups of 4 players, each as balanced as possible
-  // Strategy: pair high+low, medium+medium when possible
-  const groups: Player[][] = [];
-  const used = new Set<string>();
-  
-  // First pass: create balanced groups of 4
-  // Try to pair: [high, low, high, low] or [high, low, med, med] or [med, med, med, med]
-  const available = () => ({
-    h: highs.filter(p => !used.has(p.id)),
-    m: meds.filter(p => !used.has(p.id)),
-    l: lows.filter(p => !used.has(p.id)),
+
+  // Select players: fewest matches first, Fisher-Yates shuffle within same count
+  const byCount = new Map<number, Player[]>();
+  activePlayers.forEach(p => {
+    const c = matchCount[p.id] || 0;
+    if (!byCount.has(c)) byCount.set(c, []);
+    byCount.get(c)!.push(p);
   });
-  
-  for (let court = 0; court < numCourts; court++) {
-    const { h, m, l } = available();
-    const group: Player[] = [];
-    
-    if (h.length >= 2 && l.length >= 2) {
-      group.push(h[0], h[1], l[0], l[1]);
-    } else if (h.length >= 1 && l.length >= 1 && m.length >= 2) {
-      group.push(h[0], l[0], m[0], m[1]);
-    } else if (h.length >= 2 && m.length >= 2) {
-      group.push(h[0], m[0], h[1], m[1]);
-    } else if (m.length >= 4) {
-      group.push(m[0], m[1], m[2], m[3]);
-    } else if (h.length >= 1 && l.length >= 1 && m.length >= 1) {
-      // 3 available from different pools, grab one more from anywhere
-      const remaining = [...h.slice(1), ...m.slice(1), ...l.slice(1)];
-      group.push(h[0], l[0], m[0]);
-      if (remaining.length > 0) group.push(remaining[0]);
-    } else {
-      // Fallback: just grab whoever is available
-      const all = [...h, ...m, ...l];
-      for (let i = 0; i < Math.min(4, all.length); i++) {
-        group.push(all[i]);
+  const sortedCounts = [...byCount.keys()].sort((a, b) => a - b);
+  let selected: Player[] = [];
+  for (const c of sortedCounts) {
+    selected.push(...shuffle(byCount.get(c)!));
+  }
+  selected = selected.slice(0, playersPerRound);
+
+  /**
+   * Score a grouping of players into groups of 4.
+   * Lower is better. Considers:
+   * - Skill imbalance within each group (we want balanced teams possible)
+   * - How often players in the same group have been grouped before (novelty)
+   * - Partner repeat penalty
+   */
+  const scoreGrouping = (groups: Player[][]): number => {
+    let totalScore = 0;
+    for (const group of groups) {
+      if (group.length !== 4) continue;
+      
+      // Skill: check if balanced splits are possible (min skill diff across 3 splits)
+      const skills = group.map(skillValue);
+      const minSkillDiff = Math.min(
+        Math.abs((skills[0] + skills[1]) - (skills[2] + skills[3])),
+        Math.abs((skills[0] + skills[2]) - (skills[1] + skills[3])),
+        Math.abs((skills[0] + skills[3]) - (skills[1] + skills[2]))
+      );
+      totalScore += minSkillDiff * 8;
+      
+      // Group novelty: penalize repeated groupings
+      for (let a = 0; a < group.length; a++) {
+        for (let b = a + 1; b < group.length; b++) {
+          const times = groupHistory[group[a].id]?.[group[b].id] || 0;
+          totalScore += times * 6;
+        }
+      }
+      
+      // Partner novelty: extra penalty for being teammates again
+      for (let a = 0; a < group.length; a++) {
+        for (let b = a + 1; b < group.length; b++) {
+          if (partnerHistory[group[a].id]?.has(group[b].id)) {
+            totalScore += 3;
+          }
+        }
       }
     }
+    return totalScore;
+  };
+
+  /**
+   * Build groups greedily from a shuffled pool.
+   * For each group, pick 4 players considering skill balance.
+   */
+  const buildGroups = (pool: Player[]): Player[][] => {
+    const remaining = [...pool];
+    const groups: Player[][] = [];
     
-    if (group.length === 4) {
-      group.forEach(p => used.add(p.id));
-      groups.push(group);
-    } else {
-      break;
+    for (let court = 0; court < numCourts && remaining.length >= 4; court++) {
+      // Pick first player
+      const p1 = remaining.splice(0, 1)[0];
+      const p1Skill = skillValue(p1);
+      
+      // For a balanced group, target total skill ~8 (2 avg per player)
+      // Pick 3 more players to minimize skill deviation from target
+      const targetRemaining = 8 - p1Skill; // ideal sum of other 3
+      
+      // Score each possible trio from remaining
+      let bestTrio: number[] = [0, 1, 2];
+      let bestTrioScore = Infinity;
+      
+      const limit = Math.min(remaining.length, 10); // cap search for performance
+      for (let i = 0; i < limit; i++) {
+        for (let j = i + 1; j < limit; j++) {
+          for (let k = j + 1; k < limit; k++) {
+            const trioSkill = skillValue(remaining[i]) + skillValue(remaining[j]) + skillValue(remaining[k]);
+            const skillDev = Math.abs(trioSkill - targetRemaining);
+            // Also add group history penalty
+            const group = [p1, remaining[i], remaining[j], remaining[k]];
+            let histPenalty = 0;
+            for (let a = 0; a < group.length; a++) {
+              for (let b = a + 1; b < group.length; b++) {
+                histPenalty += (groupHistory[group[a].id]?.[group[b].id] || 0);
+              }
+            }
+            const score = skillDev * 3 + histPenalty * 5;
+            if (score < bestTrioScore) {
+              bestTrioScore = score;
+              bestTrio = [i, j, k];
+            }
+          }
+        }
+      }
+      
+      // Extract the best trio (reverse order to preserve indices)
+      const picked = bestTrio.sort((a, b) => b - a).map(idx => remaining.splice(idx, 1)[0]);
+      groups.push([p1, ...picked]);
+    }
+    return groups;
+  };
+
+  // Try multiple random orderings and pick the best grouping
+  const NUM_ATTEMPTS = 40;
+  let bestGroups: Player[][] = [];
+  let bestScore = Infinity;
+  
+  for (let attempt = 0; attempt < NUM_ATTEMPTS; attempt++) {
+    const shuffled = shuffle(selected);
+    const groups = buildGroups(shuffled);
+    const score = scoreGrouping(groups);
+    if (score < bestScore) {
+      bestScore = score;
+      bestGroups = groups;
     }
   }
   
-  // Now create matches from groups, pairing teammates to balance skill and avoid repeats
+  // Create matches from best groups, picking optimal team splits
   const matches: Match[] = [];
   
-  for (let i = 0; i < groups.length; i++) {
-    const group = groups[i];
+  for (let i = 0; i < bestGroups.length; i++) {
+    const group = bestGroups[i];
     if (group.length !== 4) continue;
     
-    // Try all 3 possible team splits and pick the best one
     const splits: [number, number, number, number][] = [
-      [0, 1, 2, 3], // 0+1 vs 2+3
-      [0, 2, 1, 3], // 0+2 vs 1+3
-      [0, 3, 1, 2], // 0+3 vs 1+2
+      [0, 1, 2, 3],
+      [0, 2, 1, 3],
+      [0, 3, 1, 2],
     ];
     
     let bestSplit = splits[0];
-    let bestScore = Infinity;
+    let bestSplitScore = Infinity;
     
     for (const split of splits) {
       const teamASkill = skillValue(group[split[0]]) + skillValue(group[split[1]]);
       const teamBSkill = skillValue(group[split[2]]) + skillValue(group[split[3]]);
       const skillDiff = Math.abs(teamASkill - teamBSkill);
       
-      // Penalty for previous partners
       let partnerPenalty = 0;
       if (partnerHistory[group[split[0]].id]?.has(group[split[1]].id)) partnerPenalty += 10;
       if (partnerHistory[group[split[2]].id]?.has(group[split[3]].id)) partnerPenalty += 10;
       
-      // Penalty for previous opponents
       let opponentPenalty = 0;
       [group[split[0]].id, group[split[1]].id].forEach(a => {
         [group[split[2]].id, group[split[3]].id].forEach(b => {
@@ -621,8 +706,8 @@ export const generateEventRound = (
       });
       
       const score = skillDiff * 5 + partnerPenalty + opponentPenalty;
-      if (score < bestScore) {
-        bestScore = score;
+      if (score < bestSplitScore) {
+        bestSplitScore = score;
         bestSplit = split;
       }
     }
