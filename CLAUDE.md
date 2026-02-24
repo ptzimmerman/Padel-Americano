@@ -7,6 +7,15 @@
 **Live at**: https://padelme.io  
 **Event subdomain**: totogi.padelme.io (Totogi Padel Invitational)
 
+## Workflow
+
+**ALWAYS use feature branches and PRs.** Never push directly to `main`. Every change — no matter how small — goes through:
+1. Create a feature branch (`feature/...`, `fix/...`)
+2. Commit and push to the branch
+3. Open a PR via `gh pr create`
+4. Test on the Cloudflare Pages preview deployment
+5. Merge only after preview is verified
+
 ## Tech Stack
 
 - **Framework**: React 19 with TypeScript
