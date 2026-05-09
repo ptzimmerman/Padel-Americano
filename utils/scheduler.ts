@@ -259,63 +259,156 @@ export const generateAmericanoSchedule = (players: Player[]): Round[] => {
     return rounds;
   }
 
-  // 2. Fallback: Proper Circle Rotation (Berger Tables) for Pairing
-  // Guarantees every player partners with everyone else exactly once.
+  // 2. Berger Rotation + Optimal Pair Matching
+  // Phase 1 (Berger): Circle rotation guarantees each player partners with
+  //   every other exactly once across N-1 rounds.
+  // Phase 2 (NEW): For each round, exhaustively search all ways to group the
+  //   N/2 partner-pairs into matches of 2-vs-2 and pick the grouping that
+  //   minimizes repeated opponent encounters — achieving (or approaching)
+  //   Balanced Whist Tournament quality for arbitrary N.
+  //   Search space is (2k-1)!! which is tractable for padel sizes:
+  //   8p→3, 12p→15, 16p→105, 20p→945, 24p→10395, 28p→135135.
   const isOdd = numPlayers % 2 !== 0;
   const n = isOdd ? numPlayers + 1 : numPlayers;
   const rounds: Round[] = [];
-  
-  // Create indices 0 to n-1 (if odd, n-1 is the Ghost)
+
+  // History matrices for optimal matching (indexed by player position)
+  const opponentCount: number[][] = Array.from({ length: numPlayers }, () =>
+    new Array(numPlayers).fill(0)
+  );
+  const groupCount: number[][] = Array.from({ length: numPlayers }, () =>
+    new Array(numPlayers).fill(0)
+  );
+  const pidToIdx = new Map<string, number>();
+  players.forEach((p, i) => pidToIdx.set(p.id, i));
+
   const indices = Array.from({ length: n }, (_, i) => i);
-  
+
   for (let r = 0; r < n - 1; r++) {
     const validPairs: [string, string][] = [];
     const roundByes: string[] = [];
-    
+
     for (let i = 0; i < n / 2; i++) {
       const idx1 = indices[i];
       const idx2 = indices[n - 1 - i];
-      
       const p1 = idx1 < numPlayers ? players[idx1] : null;
       const p2 = idx2 < numPlayers ? players[idx2] : null;
-      
       if (p1 && p2) {
         validPairs.push([p1.id, p2.id]);
       } else {
-        // If one is null, the other is sitting out this round
         if (p1) roundByes.push(p1.id);
         if (p2) roundByes.push(p2.id);
       }
     }
-    
-    // Distribute the valid pairs into matches
-    let matches: Match[] = [];
+
     const numMatchesPossible = Math.floor(validPairs.length / 2);
-    
-    for (let m = 0; m < numMatchesPossible; m++) {
-      matches.push({
-        id: `r${r}-c${m}`,
-        roundIndex: r,
-        courtIndex: m,
-        teamA: validPairs[m * 2],
-        teamB: validPairs[m * 2 + 1],
-        scoreA: null, scoreB: null, isCompleted: false
-      });
+    let matches: Match[] = [];
+
+    if (numMatchesPossible <= 1) {
+      if (validPairs.length >= 2) {
+        matches.push({
+          id: `r${r}-c0`, roundIndex: r, courtIndex: 0,
+          teamA: validPairs[0], teamB: validPairs[1],
+          scoreA: null, scoreB: null, isCompleted: false
+        });
+      }
+    } else {
+      // Score how costly it is to put pairA vs pairB in a match
+      const pairsToGroup = validPairs.slice(0, numMatchesPossible * 2);
+
+      const scorePairGroup = (piA: number, piB: number): number => {
+        const pA = pairsToGroup[piA], pB = pairsToGroup[piB];
+        let s = 0;
+        for (const aId of pA) {
+          const ai = pidToIdx.get(aId)!;
+          for (const bId of pB) {
+            s += opponentCount[ai][pidToIdx.get(bId)!] * 10;
+          }
+        }
+        const all = [...pA, ...pB];
+        for (let i = 0; i < all.length; i++) {
+          for (let j = i + 1; j < all.length; j++) {
+            s += groupCount[pidToIdx.get(all[i])!][pidToIdx.get(all[j])!] * 5;
+          }
+        }
+        return s;
+      };
+
+      // Branch-and-bound search over all pair partitions
+      let bestPartition: [number, number][] | null = null;
+      let bestScore = Infinity;
+
+      const search = (
+        remaining: number[],
+        current: [number, number][],
+        score: number
+      ) => {
+        if (remaining.length === 0) {
+          if (score < bestScore) {
+            bestScore = score;
+            bestPartition = [...current];
+          }
+          return;
+        }
+        if (remaining.length < 2 || score >= bestScore) return;
+
+        const first = remaining[0];
+        for (let i = 1; i < remaining.length; i++) {
+          const gs = scorePairGroup(first, remaining[i]);
+          const next = remaining.filter((_, idx) => idx !== 0 && idx !== i);
+          current.push([first, remaining[i]]);
+          search(next, current, score + gs);
+          current.pop();
+        }
+      };
+
+      search(
+        Array.from({ length: pairsToGroup.length }, (_, i) => i),
+        [], 0
+      );
+
+      if (bestPartition) {
+        for (let mi = 0; mi < bestPartition.length; mi++) {
+          const [piA, piB] = bestPartition[mi];
+          matches.push({
+            id: `r${r}-c${mi}`, roundIndex: r, courtIndex: mi,
+            teamA: pairsToGroup[piA], teamB: pairsToGroup[piB],
+            scoreA: null, scoreB: null, isCompleted: false
+          });
+        }
+      }
     }
-    
-    // Optimize court assignments based on history
+
     matches = optimizeCourtAssignments(matches, playerCourtHistory);
     updateCourtHistory(matches, playerCourtHistory);
-    
-    // Leftover pairs become byes
+
+    // Update opponent and group history matrices
+    for (const match of matches) {
+      for (const aId of match.teamA) {
+        const ai = pidToIdx.get(aId)!;
+        for (const bId of match.teamB) {
+          const bi = pidToIdx.get(bId)!;
+          opponentCount[ai][bi]++;
+          opponentCount[bi][ai]++;
+        }
+      }
+      const all = [...match.teamA, ...match.teamB];
+      for (let i = 0; i < all.length; i++) {
+        for (let j = i + 1; j < all.length; j++) {
+          const ii = pidToIdx.get(all[i])!, jj = pidToIdx.get(all[j])!;
+          groupCount[ii][jj]++;
+          groupCount[jj][ii]++;
+        }
+      }
+    }
+
     if (validPairs.length % 2 !== 0) {
       const lastPair = validPairs[validPairs.length - 1];
       roundByes.push(...lastPair);
     }
-    
+
     rounds.push({ index: r, matches, byes: roundByes });
-    
-    // Rotate indices for next round (fix the first element, rotate others)
+
     const last = indices.pop()!;
     indices.splice(1, 0, last);
   }
