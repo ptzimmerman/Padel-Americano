@@ -2,6 +2,8 @@ import type { Tournament } from '../types';
 
 export interface Env {
   TOURNAMENTS: KVNamespace;
+  /** Organizer password. Set as an encrypted Pages variable for Production and Preview. */
+  ROSTER_PASSWORD?: string;
 }
 
 export interface SharedTournament {

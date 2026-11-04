@@ -116,6 +116,30 @@ const mergeSavedIntoRoster = (current: Player[], incoming: SavedPlayer[]): Playe
   return next;
 };
 
+const upsertRoster = (existing: SavedPlayer[], current: Player[]): SavedPlayer[] => {
+  const now = new Date().toISOString();
+  const next = existing.map(player => ({ ...player }));
+  for (const player of current) {
+    const key = playerNameKey(player.name);
+    if (!key) continue;
+    const existingIdx = next.findIndex(saved => playerNameKey(saved.name) === key);
+    const previous = existingIdx >= 0 ? next[existingIdx] : undefined;
+    const skillLevel = player.skillLevel || previous?.skillLevel;
+    const record: SavedPlayer = {
+      id: previous?.id ?? crypto.randomUUID(),
+      name: player.name.trim(),
+      updatedAt: now,
+      isTotogian: player.isTotogian !== undefined ? !!player.isTotogian : !!previous?.isTotogian,
+    };
+    const nickname = player.nickname || previous?.nickname;
+    if (nickname) record.nickname = nickname;
+    if (skillLevel) record.skillLevel = skillLevel;
+    if (existingIdx >= 0) next[existingIdx] = record;
+    else next.push(record);
+  }
+  return next;
+};
+
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'setup' | 'rounds' | 'leaderboard'>('setup');
   const [players, setPlayers] = useState<Player[]>(() => {
@@ -133,6 +157,15 @@ const App: React.FC = () => {
   const [showSavedPlayers, setShowSavedPlayers] = useState(false);
   const [rosterNotice, setRosterNotice] = useState('');
   const noticeTimer = useRef<number | null>(null);
+  const [rosterPassword, setRosterPassword] = useState('');
+  const [showSignIn, setShowSignIn] = useState(false);
+  const [authError, setAuthError] = useState('');
+  const [accountPlayers, setAccountPlayers] = useState<SavedPlayer[] | null>(null);
+  const accountRef = useRef<SavedPlayer[] | null>(null);
+  const rosterPutChain = useRef(Promise.resolve());
+  accountRef.current = accountPlayers;
+  const signedIn = accountPlayers !== null;
+  const libraryPlayers = signedIn ? accountPlayers : savedPlayers;
   const [newPlayerTotogian, setNewPlayerTotogian] = useState(false);
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [currentRoundIndex, setCurrentRoundIndex] = useState(0);
@@ -232,6 +265,28 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem(SAVED_PLAYERS_KEY, JSON.stringify(savedPlayers));
   }, [savedPlayers]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadAccount = async () => {
+      try {
+        const response = await fetch('/api/roster', { credentials: 'include' });
+        if (cancelled) return;
+        if (!response.ok) {
+          setAccountPlayers(null);
+          return;
+        }
+        const data = await response.json() as { players?: SavedPlayer[] };
+        if (cancelled) return;
+        setAccountPlayers(Array.isArray(data.players) ? data.players : []);
+        setShowSavedPlayers(true);
+      } catch {
+        if (!cancelled) setAccountPlayers(null);
+      }
+    };
+    void loadAccount();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (tournament) localStorage.setItem('padel_tournament', JSON.stringify(tournament));
@@ -506,31 +561,81 @@ const App: React.FC = () => {
     noticeTimer.current = window.setTimeout(() => setRosterNotice(''), 2800);
   };
 
+  const persistAccount = (next: SavedPlayer[]) => {
+    accountRef.current = next;
+    setAccountPlayers(next);
+    rosterPutChain.current = rosterPutChain.current.then(async () => {
+      const response = await fetch('/api/roster', {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ players: next }),
+      });
+      if (response.status === 401) {
+        setAccountPlayers(null);
+        accountRef.current = null;
+        setAuthError('Sign in again to save your players.');
+      } else if (!response.ok) {
+        flashRosterNotice('Could not save your players');
+      }
+    }).catch(() => flashRosterNotice('Could not save your players'));
+  };
+
+  const signInToRoster = async () => {
+    setAuthError('');
+    try {
+      const response = await fetch('/api/roster/login', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: rosterPassword }),
+      });
+      if (response.status === 503) {
+        setAuthError('Roster sign-in is not configured on this server yet.');
+        return;
+      }
+      if (!response.ok) {
+        setAuthError('That password does not match.');
+        return;
+      }
+      const roster = await fetch('/api/roster', { credentials: 'include' });
+      if (!roster.ok) {
+        setAuthError('Signed in, but the player list did not load.');
+        return;
+      }
+      const data = await roster.json() as { players?: SavedPlayer[] };
+      const next = Array.isArray(data.players) ? data.players : [];
+      accountRef.current = next;
+      setAccountPlayers(next);
+      setRosterPassword('');
+      setShowSignIn(false);
+      setShowSavedPlayers(true);
+      flashRosterNotice(next.length ? `Loaded ${next.length} of your players` : 'Signed in');
+    } catch {
+      setAuthError('Could not reach sign-in.');
+    }
+  };
+
+  const signOutOfRoster = async () => {
+    accountRef.current = null;
+    setAccountPlayers(null);
+    setAuthError('');
+    try {
+      await fetch('/api/roster/logout', { method: 'POST', credentials: 'include' });
+    } catch {
+      // The local session is already cleared.
+    }
+  };
+
   const saveCurrentRoster = () => {
     if (players.length === 0) return;
-    const now = new Date().toISOString();
-    setSavedPlayers(prev => {
-      const next = [...prev];
-      for (const player of players) {
-        const key = playerNameKey(player.name);
-        if (!key) continue;
-        const existingIdx = next.findIndex(saved => playerNameKey(saved.name) === key);
-        const previous = existingIdx >= 0 ? next[existingIdx] : undefined;
-        const skillLevel = player.skillLevel || previous?.skillLevel;
-        const record: SavedPlayer = {
-          id: previous?.id ?? crypto.randomUUID(),
-          name: player.name.trim(),
-          updatedAt: now,
-          isTotogian: player.isTotogian !== undefined ? !!player.isTotogian : !!previous?.isTotogian,
-        };
-        const nickname = player.nickname || previous?.nickname;
-        if (nickname) record.nickname = nickname;
-        if (skillLevel) record.skillLevel = skillLevel;
-        if (existingIdx >= 0) next[existingIdx] = record;
-        else next.push(record);
-      }
-      return next;
-    });
+    if (signedIn) {
+      persistAccount(upsertRoster(accountRef.current ?? [], players));
+      setShowSavedPlayers(true);
+      flashRosterNotice(`Saved ${players.length} player${players.length === 1 ? '' : 's'} to your account`);
+      return;
+    }
+    setSavedPlayers(prev => upsertRoster(prev, players));
     setShowSavedPlayers(true);
     flashRosterNotice(`Saved ${players.length} player${players.length === 1 ? '' : 's'} for next time`);
   };
@@ -562,17 +667,19 @@ const App: React.FC = () => {
     }
     if (!player) return;
     const key = playerNameKey(player.name);
+    if (signedIn && accountRef.current?.some(saved => playerNameKey(saved.name) === key)) {
+      persistAccount((accountRef.current ?? []).map(saved =>
+        playerNameKey(saved.name) === key ? { ...saved, skillLevel, updatedAt: new Date().toISOString() } : saved
+      ));
+    }
     setSavedPlayers(prev => prev.map(saved =>
       playerNameKey(saved.name) === key ? { ...saved, skillLevel, updatedAt: new Date().toISOString() } : saved
     ));
   };
 
-  const updateSavedPlayer = (id: string, patch: Partial<Pick<SavedPlayer, 'skillLevel' | 'isTotogian'>>) => {
-    const saved = savedPlayers.find(p => p.id === id);
-    if (!saved) return;
-    setSavedPlayers(prev => prev.map(p => p.id === id ? { ...p, ...patch, updatedAt: new Date().toISOString() } : p));
+  const applySavedEditToEvent = (name: string, patch: Partial<Pick<SavedPlayer, 'skillLevel' | 'isTotogian'>>) => {
     if (rosterLocked) return;
-    const key = playerNameKey(saved.name);
+    const key = playerNameKey(name);
     setPlayers(prev => prev.map(p => playerNameKey(p.name) === key ? { ...p, ...patch } : p));
     if (tournament?.mode === 'event') {
       setTournament(prev => prev ? {
@@ -582,7 +689,25 @@ const App: React.FC = () => {
     }
   };
 
+  const updateSavedPlayer = (id: string, patch: Partial<Pick<SavedPlayer, 'skillLevel' | 'isTotogian'>>) => {
+    if (signedIn) {
+      const saved = accountRef.current?.find(p => p.id === id);
+      if (!saved) return;
+      persistAccount((accountRef.current ?? []).map(p => p.id === id ? { ...p, ...patch, updatedAt: new Date().toISOString() } : p));
+      applySavedEditToEvent(saved.name, patch);
+      return;
+    }
+    const saved = savedPlayers.find(p => p.id === id);
+    if (!saved) return;
+    setSavedPlayers(prev => prev.map(p => p.id === id ? { ...p, ...patch, updatedAt: new Date().toISOString() } : p));
+    applySavedEditToEvent(saved.name, patch);
+  };
+
   const removeSavedPlayer = (id: string) => {
+    if (signedIn) {
+      persistAccount((accountRef.current ?? []).filter(p => p.id !== id));
+      return;
+    }
     setSavedPlayers(prev => prev.filter(p => p.id !== id));
   };
 
@@ -1092,39 +1217,89 @@ const App: React.FC = () => {
                   }`}
                 >
                   <FolderOpen className="w-4 h-4" />
-                  Saved players{savedPlayers.length > 0 ? ` (${savedPlayers.length})` : ''}
+                  {signedIn ? 'Your players' : 'Saved players'}{libraryPlayers.length > 0 ? ` (${libraryPlayers.length})` : ''}
                 </button>
+                {signedIn ? (
+                  <button
+                    type="button"
+                    onClick={() => void signOutOfRoster()}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-black border-2 border-slate-200 text-slate-600 hover:border-slate-300"
+                  >
+                    Sign out
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    aria-expanded={showSignIn}
+                    onClick={() => setShowSignIn(open => !open)}
+                    className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-black border-2 transition-all ${
+                      showSignIn
+                        ? `${tc.primaryLight} ${tc.primaryText} ${tc.primaryBorder}`
+                        : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    Sign in
+                  </button>
+                )}
                 {rosterNotice && (
                   <span className="text-sm font-bold text-emerald-600">{rosterNotice}</span>
                 )}
               </div>
+              {showSignIn && !signedIn && (
+                <form
+                  className="flex flex-wrap items-center gap-2 mb-3"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void signInToRoster();
+                  }}
+                >
+                  <input
+                    type="password"
+                    value={rosterPassword}
+                    onChange={(event) => setRosterPassword(event.target.value)}
+                    autoComplete="current-password"
+                    aria-label="Roster password"
+                    placeholder="Roster password"
+                    className={`flex-1 min-w-[12rem] bg-slate-50 border-2 border-slate-100 rounded-xl px-4 py-2.5 font-bold focus:outline-none ${tc.focusBorder}`}
+                  />
+                  <button type="submit" className={`${tc.primary} text-white px-4 py-2.5 rounded-xl text-sm font-black`}>
+                    Sign in
+                  </button>
+                  {authError && <span className="text-sm font-bold text-rose-500">{authError}</span>}
+                </form>
+              )}
               <p className="text-xs text-slate-400 font-medium mb-4">
-                Save keeps names, nicknames, Totogian flags, and skill for the next event. Ending or clearing this tournament does not delete them.
+                {signedIn
+                  ? 'These players are on your account. Sign out and they leave this browser. Saving on this device, without signing in, stays on this device only.'
+                  : 'Save keeps names, nicknames, Totogian flags, and skill on this device. Sign in to load the players saved on your account.'}
               </p>
 
               {showSavedPlayers && (
                 <div className="mb-6 rounded-2xl border-2 border-slate-100 bg-slate-50 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-                    <h3 className="font-black text-slate-800 text-sm">Saved for next time</h3>
+                    <h3 className="font-black text-slate-800 text-sm">{signedIn ? 'Your account' : 'Saved for next time'}</h3>
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
-                        onClick={() => importSaved(savedPlayers)}
-                        disabled={rosterLocked || savedPlayers.length === 0}
+                        onClick={() => importSaved(libraryPlayers)}
+                        disabled={rosterLocked || libraryPlayers.length === 0}
                         className={`px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wide ${
-                          rosterLocked || savedPlayers.length === 0
+                          rosterLocked || libraryPlayers.length === 0
                             ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
                             : `${tc.primary} text-white`
                         }`}
                       >
                         Load into this event
                       </button>
-                      {savedPlayers.length > 0 && (
+                      {libraryPlayers.length > 0 && (
                         <button
                           type="button"
                           onClick={() => {
-                            if (window.confirm('Remove every saved player? This does not change the current roster.')) {
-                              setSavedPlayers([]);
+                            if (window.confirm(signedIn
+                              ? 'Remove every player from your account? This does not change the current roster.'
+                              : 'Remove every saved player? This does not change the current roster.')) {
+                              if (signedIn) persistAccount([]);
+                              else setSavedPlayers([]);
                             }
                           }}
                           className="px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wide text-rose-500 hover:bg-rose-50"
@@ -1137,11 +1312,13 @@ const App: React.FC = () => {
                   {rosterLocked && (
                     <p className="text-xs font-bold text-amber-600 mb-3">End the classic tournament before loading saved players.</p>
                   )}
-                  {savedPlayers.length === 0 ? (
-                    <p className="text-sm text-slate-400 font-medium py-4 text-center">No saved players yet. Save this roster to reuse it next time.</p>
+                  {libraryPlayers.length === 0 ? (
+                    <p className="text-sm text-slate-400 font-medium py-4 text-center">
+                      {signedIn ? 'No players on your account yet. Save this roster while signed in.' : 'No saved players yet. Save this roster to reuse it next time.'}
+                    </p>
                   ) : (
                     <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
-                      {[...savedPlayers].sort((a, b) => a.name.localeCompare(b.name)).map(saved => {
+                      {[...libraryPlayers].sort((a, b) => a.name.localeCompare(b.name)).map(saved => {
                         const onRoster = players.some(p => playerNameKey(p.name) === playerNameKey(saved.name));
                         return (
                           <div key={saved.id} className="flex flex-col gap-2 bg-white rounded-xl px-3 py-3 border border-slate-100 sm:flex-row sm:items-center sm:justify-between">
@@ -1215,13 +1392,13 @@ const App: React.FC = () => {
                 {players.length === 0 ? (
                   <div className="col-span-1 md:col-span-2 py-12 md:py-16 text-center border-4 border-dashed border-slate-100 rounded-2xl md:rounded-[3rem] text-slate-300 font-black italic">
                     <p>No players added yet.</p>
-                    {savedPlayers.length > 0 && !rosterLocked && (
+                    {libraryPlayers.length > 0 && !rosterLocked && (
                       <button
                         type="button"
-                        onClick={() => importSaved(savedPlayers)}
+                        onClick={() => importSaved(libraryPlayers)}
                         className={`mt-4 not-italic ${tc.primary} text-white px-5 py-3 rounded-xl text-sm`}
                       >
-                        Load {savedPlayers.length} saved player{savedPlayers.length === 1 ? '' : 's'}
+                        Load {libraryPlayers.length} saved player{libraryPlayers.length === 1 ? '' : 's'}
                       </button>
                     )}
                   </div>
