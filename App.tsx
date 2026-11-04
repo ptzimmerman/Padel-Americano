@@ -27,7 +27,9 @@ import {
   UserPlus,
   UserMinus,
   Monitor,
-  Tablet
+  Tablet,
+  Save,
+  FolderOpen
 } from 'lucide-react';
 
 interface ShareState {
@@ -45,11 +47,92 @@ const SKILL_COLORS = {
   high: { bg: 'bg-rose-100', text: 'text-rose-700', border: 'border-rose-200', dot: 'bg-rose-500' },
 };
 
+const SKILL_LEVELS = ['low', 'medium', 'high'] as const;
+type SkillLevel = (typeof SKILL_LEVELS)[number];
+
+/** Survives "clear all" and the next event. Separate from the live roster in padel_players. */
+const SAVED_PLAYERS_KEY = 'padel_saved_players';
+
+interface SavedPlayer {
+  id: string;
+  name: string;
+  nickname?: string;
+  isTotogian?: boolean;
+  skillLevel?: SkillLevel;
+  updatedAt: string;
+}
+
+const playerNameKey = (name: string) => name.trim().toLowerCase().replace(/\s+/g, ' ');
+
+const isSkillLevel = (value: unknown): value is SkillLevel =>
+  value === 'low' || value === 'medium' || value === 'high';
+
+const readSavedPlayers = (): SavedPlayer[] => {
+  try {
+    const raw = localStorage.getItem(SAVED_PLAYERS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const saved: SavedPlayer[] = [];
+    for (const entry of parsed) {
+      if (!entry || typeof entry.id !== 'string' || typeof entry.name !== 'string' || !entry.name.trim()) continue;
+      const player: SavedPlayer = {
+        id: entry.id,
+        name: entry.name.trim(),
+        isTotogian: !!entry.isTotogian,
+        updatedAt: typeof entry.updatedAt === 'string' ? entry.updatedAt : new Date(0).toISOString(),
+      };
+      if (typeof entry.nickname === 'string' && entry.nickname.trim()) player.nickname = entry.nickname.trim();
+      if (isSkillLevel(entry.skillLevel)) player.skillLevel = entry.skillLevel;
+      saved.push(player);
+    }
+    return saved;
+  } catch {
+    return [];
+  }
+};
+
+const mergeSavedIntoRoster = (current: Player[], incoming: SavedPlayer[]): Player[] => {
+  const next = current.map(p => ({ ...p }));
+  for (const saved of incoming) {
+    const key = playerNameKey(saved.name);
+    if (!key) continue;
+    const match = next.find(p => playerNameKey(p.name) === key);
+    if (match) {
+      if (saved.nickname) match.nickname = saved.nickname;
+      match.isTotogian = !!saved.isTotogian;
+      if (saved.skillLevel) match.skillLevel = saved.skillLevel;
+    } else {
+      next.push({
+        id: crypto.randomUUID(),
+        name: saved.name.trim(),
+        ...(saved.nickname ? { nickname: saved.nickname } : {}),
+        isTotogian: !!saved.isTotogian,
+        ...(saved.skillLevel ? { skillLevel: saved.skillLevel } : {}),
+        isActive: true,
+      });
+    }
+  }
+  return next;
+};
+
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'setup' | 'rounds' | 'leaderboard'>('setup');
-  const [players, setPlayers] = useState<Player[]>([]);
+  const [players, setPlayers] = useState<Player[]>(() => {
+    try {
+      const raw = localStorage.getItem('padel_players');
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  });
   const [newPlayerName, setNewPlayerName] = useState('');
-  const [newPlayerSkill, setNewPlayerSkill] = useState<'low' | 'medium' | 'high'>('medium');
+  const [newPlayerSkill, setNewPlayerSkill] = useState<SkillLevel>('medium');
+  const [savedPlayers, setSavedPlayers] = useState<SavedPlayer[]>(() => readSavedPlayers());
+  const [showSavedPlayers, setShowSavedPlayers] = useState(false);
+  const [rosterNotice, setRosterNotice] = useState('');
+  const noticeTimer = useRef<number | null>(null);
   const [newPlayerTotogian, setNewPlayerTotogian] = useState(false);
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [currentRoundIndex, setCurrentRoundIndex] = useState(0);
@@ -85,6 +168,7 @@ const App: React.FC = () => {
   const [isGeneratingNicknames, setIsGeneratingNicknames] = useState(false);
 
   const isEvent = eventMode || tournament?.mode === 'event';
+  const rosterLocked = !!tournament && tournament.mode !== 'event';
   const themeColor = isEvent ? 'purple' : 'indigo';
   
   // Theme classes
@@ -144,6 +228,10 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('padel_players', JSON.stringify(players));
   }, [players]);
+
+  useEffect(() => {
+    localStorage.setItem(SAVED_PLAYERS_KEY, JSON.stringify(savedPlayers));
+  }, [savedPlayers]);
 
   useEffect(() => {
     if (tournament) localStorage.setItem('padel_tournament', JSON.stringify(tournament));
@@ -412,6 +500,92 @@ const App: React.FC = () => {
     setNewPlayerTotogian(false);
   };
 
+  const flashRosterNotice = (message: string) => {
+    setRosterNotice(message);
+    if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
+    noticeTimer.current = window.setTimeout(() => setRosterNotice(''), 2800);
+  };
+
+  const saveCurrentRoster = () => {
+    if (players.length === 0) return;
+    const now = new Date().toISOString();
+    setSavedPlayers(prev => {
+      const next = [...prev];
+      for (const player of players) {
+        const key = playerNameKey(player.name);
+        if (!key) continue;
+        const existingIdx = next.findIndex(saved => playerNameKey(saved.name) === key);
+        const previous = existingIdx >= 0 ? next[existingIdx] : undefined;
+        const skillLevel = player.skillLevel || previous?.skillLevel;
+        const record: SavedPlayer = {
+          id: previous?.id ?? crypto.randomUUID(),
+          name: player.name.trim(),
+          updatedAt: now,
+          isTotogian: player.isTotogian !== undefined ? !!player.isTotogian : !!previous?.isTotogian,
+        };
+        const nickname = player.nickname || previous?.nickname;
+        if (nickname) record.nickname = nickname;
+        if (skillLevel) record.skillLevel = skillLevel;
+        if (existingIdx >= 0) next[existingIdx] = record;
+        else next.push(record);
+      }
+      return next;
+    });
+    setShowSavedPlayers(true);
+    flashRosterNotice(`Saved ${players.length} player${players.length === 1 ? '' : 's'} for next time`);
+  };
+
+  const importSaved = (incoming: SavedPlayer[]) => {
+    if (rosterLocked || incoming.length === 0) return;
+    const base = tournament?.mode === 'event' ? tournament.players : players;
+    const already = new Set(base.map(p => playerNameKey(p.name)));
+    const added = incoming.filter(p => !already.has(playerNameKey(p.name))).length;
+    const merged = mergeSavedIntoRoster(base, incoming);
+    setPlayers(merged);
+    if (tournament?.mode === 'event') {
+      setTournament(prev => prev ? { ...prev, players: merged } : prev);
+    }
+    const refreshed = incoming.length - added;
+    if (added && refreshed) flashRosterNotice(`Added ${added}, updated ${refreshed} already on the roster`);
+    else if (added) flashRosterNotice(`Added ${added} saved player${added === 1 ? '' : 's'}`);
+    else flashRosterNotice(`Updated ${refreshed} player${refreshed === 1 ? '' : 's'} already on the roster`);
+  };
+
+  const updatePlayerSkill = (id: string, skillLevel: SkillLevel) => {
+    const player = players.find(p => p.id === id);
+    setPlayers(prev => prev.map(p => p.id === id ? { ...p, skillLevel } : p));
+    if (tournament?.mode === 'event') {
+      setTournament(prev => prev ? {
+        ...prev,
+        players: prev.players.map(p => p.id === id ? { ...p, skillLevel } : p),
+      } : prev);
+    }
+    if (!player) return;
+    const key = playerNameKey(player.name);
+    setSavedPlayers(prev => prev.map(saved =>
+      playerNameKey(saved.name) === key ? { ...saved, skillLevel, updatedAt: new Date().toISOString() } : saved
+    ));
+  };
+
+  const updateSavedPlayer = (id: string, patch: Partial<Pick<SavedPlayer, 'skillLevel' | 'isTotogian'>>) => {
+    const saved = savedPlayers.find(p => p.id === id);
+    if (!saved) return;
+    setSavedPlayers(prev => prev.map(p => p.id === id ? { ...p, ...patch, updatedAt: new Date().toISOString() } : p));
+    if (rosterLocked) return;
+    const key = playerNameKey(saved.name);
+    setPlayers(prev => prev.map(p => playerNameKey(p.name) === key ? { ...p, ...patch } : p));
+    if (tournament?.mode === 'event') {
+      setTournament(prev => prev ? {
+        ...prev,
+        players: prev.players.map(p => playerNameKey(p.name) === key ? { ...p, ...patch } : p),
+      } : prev);
+    }
+  };
+
+  const removeSavedPlayer = (id: string) => {
+    setSavedPlayers(prev => prev.filter(p => p.id !== id));
+  };
+
   const removePlayer = (id: string) => {
     if (tournament?.mode === 'event') {
       // In event mode, just deactivate instead of removing
@@ -556,7 +730,7 @@ const App: React.FC = () => {
   };
 
   const clearAllData = async () => {
-    if (window.confirm("Clear ALL data? This will remove all players and tournament data.")) {
+    if (window.confirm("Clear the current roster and tournament? Saved players are kept for next time.")) {
       if (shareState.isSharing && shareState.shareId && shareState.pin) {
         try {
           await fetch(`/api/game/${shareState.shareId}`, {
@@ -893,10 +1067,164 @@ const App: React.FC = () => {
                 )}
               </div>
 
+              <div className="flex flex-wrap items-center gap-2 mb-3">
+                <button
+                  type="button"
+                  onClick={saveCurrentRoster}
+                  disabled={players.length === 0}
+                  className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-black transition-all ${
+                    players.length === 0
+                      ? 'bg-slate-100 text-slate-300 cursor-not-allowed'
+                      : `${tc.primary} text-white shadow-sm active:scale-95`
+                  }`}
+                >
+                  <Save className="w-4 h-4" />
+                  Save roster
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowSavedPlayers(open => !open)}
+                  aria-expanded={showSavedPlayers}
+                  className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-black border-2 transition-all ${
+                    showSavedPlayers
+                      ? `${tc.primaryLight} ${tc.primaryText} ${tc.primaryBorder}`
+                      : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  <FolderOpen className="w-4 h-4" />
+                  Saved players{savedPlayers.length > 0 ? ` (${savedPlayers.length})` : ''}
+                </button>
+                {rosterNotice && (
+                  <span className="text-sm font-bold text-emerald-600">{rosterNotice}</span>
+                )}
+              </div>
+              <p className="text-xs text-slate-400 font-medium mb-4">
+                Save keeps names, nicknames, Totogian flags, and skill for the next event. Ending or clearing this tournament does not delete them.
+              </p>
+
+              {showSavedPlayers && (
+                <div className="mb-6 rounded-2xl border-2 border-slate-100 bg-slate-50 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                    <h3 className="font-black text-slate-800 text-sm">Saved for next time</h3>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => importSaved(savedPlayers)}
+                        disabled={rosterLocked || savedPlayers.length === 0}
+                        className={`px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wide ${
+                          rosterLocked || savedPlayers.length === 0
+                            ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                            : `${tc.primary} text-white`
+                        }`}
+                      >
+                        Load into this event
+                      </button>
+                      {savedPlayers.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm('Remove every saved player? This does not change the current roster.')) {
+                              setSavedPlayers([]);
+                            }
+                          }}
+                          className="px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wide text-rose-500 hover:bg-rose-50"
+                        >
+                          Remove all
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {rosterLocked && (
+                    <p className="text-xs font-bold text-amber-600 mb-3">End the classic tournament before loading saved players.</p>
+                  )}
+                  {savedPlayers.length === 0 ? (
+                    <p className="text-sm text-slate-400 font-medium py-4 text-center">No saved players yet. Save this roster to reuse it next time.</p>
+                  ) : (
+                    <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
+                      {[...savedPlayers].sort((a, b) => a.name.localeCompare(b.name)).map(saved => {
+                        const onRoster = players.some(p => playerNameKey(p.name) === playerNameKey(saved.name));
+                        return (
+                          <div key={saved.id} className="flex flex-col gap-2 bg-white rounded-xl px-3 py-3 border border-slate-100 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="min-w-0">
+                              <div className="font-bold text-slate-800 truncate">{saved.name}</div>
+                              {saved.nickname && (
+                                <div className={`text-xs font-semibold ${tc.nicknameText}`}>"{saved.nickname}"</div>
+                              )}
+                            </div>
+                            <div className="flex flex-wrap items-center gap-1">
+                              {SKILL_LEVELS.map(level => (
+                                <button
+                                  key={level}
+                                  type="button"
+                                  aria-label={`Saved skill ${level} for ${saved.name}`}
+                                  aria-pressed={saved.skillLevel === level}
+                                  onClick={() => updateSavedPlayer(saved.id, { skillLevel: level })}
+                                  className={`px-2 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border-2 ${
+                                    saved.skillLevel === level
+                                      ? `${SKILL_COLORS[level].bg} ${SKILL_COLORS[level].text} ${SKILL_COLORS[level].border}`
+                                      : 'bg-slate-50 text-slate-400 border-transparent hover:border-slate-200'
+                                  }`}
+                                >
+                                  {level}
+                                </button>
+                              ))}
+                              <button
+                                type="button"
+                                aria-label={`Totogian for ${saved.name}`}
+                                aria-pressed={!!saved.isTotogian}
+                                onClick={() => updateSavedPlayer(saved.id, { isTotogian: !saved.isTotogian })}
+                                className={`px-2 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border-2 ${
+                                  saved.isTotogian
+                                    ? 'bg-purple-100 text-purple-600 border-purple-200'
+                                    : 'bg-slate-50 text-slate-400 border-transparent hover:border-slate-200'
+                                }`}
+                              >
+                                Totogi
+                              </button>
+                              {onRoster ? (
+                                <span className="px-2 text-[10px] font-black uppercase tracking-wider text-emerald-600">On roster</span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => importSaved([saved])}
+                                  disabled={rosterLocked}
+                                  className="px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider text-slate-600 hover:bg-slate-100 disabled:opacity-40"
+                                >
+                                  Add
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                aria-label={`Remove ${saved.name} from saved players`}
+                                onClick={() => removeSavedPlayer(saved.id)}
+                                className="p-1 rounded-lg text-slate-300 hover:text-rose-500"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Player list */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 max-h-[400px] md:max-h-[500px] overflow-y-auto pr-1">
                 {players.length === 0 ? (
-                  <div className="col-span-1 md:col-span-2 py-16 md:py-20 text-center border-4 border-dashed border-slate-100 rounded-2xl md:rounded-[3rem] text-slate-300 font-black italic">No players added yet.</div>
+                  <div className="col-span-1 md:col-span-2 py-12 md:py-16 text-center border-4 border-dashed border-slate-100 rounded-2xl md:rounded-[3rem] text-slate-300 font-black italic">
+                    <p>No players added yet.</p>
+                    {savedPlayers.length > 0 && !rosterLocked && (
+                      <button
+                        type="button"
+                        onClick={() => importSaved(savedPlayers)}
+                        className={`mt-4 not-italic ${tc.primary} text-white px-5 py-3 rounded-xl text-sm`}
+                      >
+                        Load {savedPlayers.length} saved player{savedPlayers.length === 1 ? '' : 's'}
+                      </button>
+                    )}
+                  </div>
                 ) : players.map((p, idx) => (
                   <div key={p.id} className={`flex items-center justify-between bg-white border-2 rounded-2xl md:rounded-[2rem] px-5 md:px-8 py-4 md:py-5 shadow-sm transition-all group ${
                     tournament?.mode === 'event' && p.isActive === false
@@ -908,12 +1236,23 @@ const App: React.FC = () => {
                       <div className="min-w-0">
                         <PlayerName name={p.name} nickname={p.nickname} baseClass="font-black text-slate-800 text-lg md:text-xl" inline />
                         {isEvent && (
-                          <div className="flex items-center gap-2 mt-1">
-                            {p.skillLevel && (
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${SKILL_COLORS[p.skillLevel].bg} ${SKILL_COLORS[p.skillLevel].text}`}>
-                                {p.skillLevel}
-                              </span>
-                            )}
+                          <div className="flex flex-wrap items-center gap-1 mt-1">
+                            {SKILL_LEVELS.map(level => (
+                              <button
+                                key={level}
+                                type="button"
+                                aria-label={`${p.name} skill ${level}`}
+                                aria-pressed={(p.skillLevel || 'medium') === level}
+                                onClick={() => updatePlayerSkill(p.id, level)}
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border-2 ${
+                                  (p.skillLevel || 'medium') === level
+                                    ? `${SKILL_COLORS[level].bg} ${SKILL_COLORS[level].text} ${SKILL_COLORS[level].border}`
+                                    : 'bg-slate-50 text-slate-400 border-transparent hover:border-slate-200'
+                                }`}
+                              >
+                                {level}
+                              </button>
+                            ))}
                             {p.isTotogian && (
                               <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-purple-100 text-purple-600">
                                 Totogi
