@@ -26,10 +26,7 @@ const readStored = async (env: Env): Promise<OwnerPlayer[] | null> => {
 export const onRequestGet: PagesFunction<Env> = async (context) => {
   const { request, env } = context;
   if (!env.ROSTER_PASSWORD) {
-    return json({
-      error: 'Roster sign-in is not configured',
-      envKeys: Object.keys(env).sort(),
-    }, 503);
+    return json({ error: 'Roster sign-in is not configured' } satisfies ErrorResponse, 503);
   }
   if (!await isRosterAuthed(request, env)) return unauthorized();
 
